@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SharePoint File Search</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-icon">📂</div>
+            <h1>SharePoint File Search</h1>
+            <p class="subtitle">Search files by name in Shared Documents</p>
+        </div>
+
+        <!-- Path Filter -->
+        <div class="path-section">
+            <div class="path-input-row">
+                <span class="path-label">📂</span>
+                <input type="text" id="pathInput" placeholder="/subfolder/path" autocomplete="off">
+                <button id="addPathBtn" class="add-path-btn">+ Add</button>
+            </div>
+            <div id="pathTags" class="path-tags">
+                <span class="path-hint">All folders (Shared Documents)</span>
+            </div>
+        </div>
+
+        <!-- Search Box -->
+        <div class="search-box">
+            <div class="input-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="Enter filename to search..." autocomplete="off">
+                <button id="clearBtn" class="clear-btn" title="Clear">✕</button>
+            </div>
+            <button id="searchBtn" class="search-btn">Search</button>
+            <button id="refreshBtn" class="refresh-btn" title="Refresh file list">🔄</button>
+        </div>
+
+        <!-- Status -->
+        <div id="status" class="status hidden"></div>
+
+        <!-- Results -->
+        <div id="results" class="results"></div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <span id="connectionStatus" class="footer-note">⏳ Checking connection...</span>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

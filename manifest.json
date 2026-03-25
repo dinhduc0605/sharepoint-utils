@@ -1,0 +1,22 @@
+{
+    "manifest_version": 3,
+    "name": "SharePoint File Search",
+    "version": "1.0",
+    "description": "Search files by name in SharePoint folder",
+    "permissions": [
+        "cookies",
+        "activeTab",
+        "scripting",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://dxcportal.sharepoint.com/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "SharePoint File Search"
+    }
+}
