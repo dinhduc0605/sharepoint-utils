@@ -10,7 +10,6 @@ const CONFIG = {
 // File Cache (per-path)
 // ============================================
 const fileCache = new Map(); // key: folderPath, value: { files, time }
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
 // ============================================
 // Search Paths
@@ -145,11 +144,8 @@ async function restoreState() {
 
         // Restore cache (only if not expired)
         if (data.fileCache && typeof data.fileCache === "object") {
-            const now = Date.now();
             for (const [key, value] of Object.entries(data.fileCache)) {
-                if (value.time && (now - value.time < CACHE_DURATION)) {
                     fileCache.set(key, value);
-                }
             }
         }
     } catch (e) {
@@ -262,13 +258,11 @@ function getSearchRoots() {
 async function loadFilesForPaths() {
     const roots = getSearchRoots();
     const allFiles = [];
-    const now = Date.now();
-
-    // Determine which roots need fresh loading
     const toLoad = [];
+
     for (const root of roots) {
         const cached = fileCache.get(root);
-        if (cached && (now - cached.time < CACHE_DURATION)) {
+        if (cached) {
             allFiles.push(...cached.files);
         } else {
             toLoad.push(root);
