@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "SharePoint File Search",
-    "version": "2.0",
-    "description": "Search files by name in SharePoint folder",
+    "name": "SharePoint Utils",
+    "version": "2.1",
+    "description": "SharePoint file search and utilities",
     "permissions": [
         "cookies",
         "activeTab",
