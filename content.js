@@ -11,9 +11,10 @@
     // ============================================
     // CONFIG
     // ============================================
-    const CONFIG = {
+    let CONFIG = {
         siteUrl: "https://dxcportal.sharepoint.com/sites/msteams_268a65",
-        folderPath: "/sites/msteams_268a65/Shared Documents"
+        folderPath: "/sites/msteams_268a65/Shared Documents",
+        fullUrl: "https://dxcportal.sharepoint.com/sites/msteams_268a65/Shared Documents"
     };
 
     const BATCH_SIZE = 3;
@@ -81,6 +82,14 @@
                         <div class="sp-refresh-hint">Export/import paths and cached file data</div>
                     </div>
                     <div class="sp-settings-section">
+                        <div class="sp-settings-label">Target Document Library URL</div>
+                        <div class="sp-path-add-row">
+                            <input type="text" class="sp-path-input" id="sp-config-url-input" placeholder="https://..." autocomplete="off">
+                            <button class="sp-add-path-btn" id="sp-save-config-btn">Save</button>
+                        </div>
+                        <div class="sp-refresh-hint">Changing this will clear your subfolders and cached data</div>
+                    </div>
+                    <div class="sp-settings-section">
                         <div class="sp-settings-label">Add Subfolder</div>
                         <div class="sp-path-add-row">
                             <input type="text" class="sp-path-input" id="sp-path-input" placeholder="/subfolder/path" autocomplete="off">
@@ -128,6 +137,8 @@
     const exportBtn = document.getElementById("sp-export-btn");
     const importBtn = document.getElementById("sp-import-btn");
     const importFile = document.getElementById("sp-import-file");
+    const configUrlInput = document.getElementById("sp-config-url-input");
+    const saveConfigBtn = document.getElementById("sp-save-config-btn");
     const tabBtns = backdrop.querySelectorAll(".sp-tab-btn");
     const tabPanels = backdrop.querySelectorAll(".sp-tab-panel");
 
@@ -203,14 +214,17 @@
         refreshBtn.textContent = "⏳ Refreshing...";
         try {
             const files = await loadFilesForChecked();
+            showSettingsStatus("", ""); // CLEAR STATUS HERE
             refreshBtn.textContent = "✅ Refreshed! (" + files.length + " files)";
             setTimeout(() => {
                 refreshBtn.textContent = "🔄 Refresh checked folders";
                 refreshBtn.disabled = false;
             }, 2000);
         } catch (e) {
-            refreshBtn.textContent = "❌ Failed: " + e.message;
+            showSettingsStatus("error", "❌ Failed: " + e.message); // SHOW ERROR HERE
+            refreshBtn.textContent = "❌ Failed";
             setTimeout(() => {
+                showSettingsStatus("", "");
                 refreshBtn.textContent = "🔄 Refresh checked folders";
                 refreshBtn.disabled = false;
             }, 3000);
@@ -232,6 +246,14 @@
         importFile.value = ""; // reset so same file can be re-imported
     });
 
+    // Configuration
+    saveConfigBtn.addEventListener("click", () => {
+        const url = configUrlInput.value.trim();
+        if (!url) return;
+        if (!confirm("Changing the Document Library URL will reset your subfolders and cached data. Continue?")) return;
+        parseAndApplyConfigUrl(url, true);
+    });
+
     // Focus input & restore state
     searchInput.focus();
     restoreState();
@@ -248,6 +270,38 @@
     // ============================================
     // Path Management
     // ============================================
+    function parseAndApplyConfigUrl(inputUrl, resetData) {
+        try {
+            const url = new URL(inputUrl);
+            const origin = url.origin;
+            const pathname = decodeURIComponent(url.pathname);
+            
+            const segments = pathname.split('/').filter(Boolean);
+            if (segments.length < 2) throw new Error("Invalid URL form");
+            
+            CONFIG.siteUrl = origin + '/' + segments[0] + '/' + segments[1];
+            CONFIG.folderPath = pathname;
+            CONFIG.fullUrl = inputUrl;
+
+            if (resetData) {
+                searchPaths = [];
+                fileData.clear();
+                savePaths();
+                saveData();
+                chrome.storage.local.set({ configUrl: inputUrl });
+                renderPathList();
+                updateFilterOptions();
+                showSettingsStatus("success", "✅ Configuration saved and data reset.");
+                setTimeout(() => showSettingsStatus("", ""), 3000);
+            }
+        } catch (e) {
+            if (resetData) {
+                showSettingsStatus("error", "❌ Invalid SharePoint URL format.");
+                setTimeout(() => showSettingsStatus("", ""), 3000);
+            }
+        }
+    }
+
     function addPath() {
         let path = pathInput.value.trim();
         if (!path) return;
@@ -365,6 +419,12 @@
         // Header
         rows.push("type,path,checked,name,serverRelativeUrl,size,modified,folderKey");
 
+        // URL row
+        rows.push([
+            "URL", csvEscape(CONFIG.fullUrl), "",
+            "", "", "", "", ""
+        ].join(","));
+
         // PATH rows
         searchPaths.forEach(item => {
             rows.push([
@@ -415,7 +475,14 @@
                     if (cols.length < 3) continue;
                     const type = cols[0];
 
-                    if (type === "PATH") {
+                    if (type === "URL") {
+                        const importedUrl = cols[1];
+                        if (importedUrl) {
+                            parseAndApplyConfigUrl(importedUrl, false);
+                            configUrlInput.value = importedUrl;
+                            chrome.storage.local.set({ configUrl: importedUrl });
+                        }
+                    } else if (type === "PATH") {
                         const path = cols[1];
                         const checked = cols[2] === "true";
                         if (path) newPaths.push({ path, checked });
@@ -500,7 +567,15 @@
 
     async function restoreState() {
         try {
-            const data = await chrome.storage.local.get(["searchPaths", "fileData"]);
+            const data = await chrome.storage.local.get(["searchPaths", "fileData", "configUrl"]);
+            
+            if (data.configUrl) {
+                parseAndApplyConfigUrl(data.configUrl, false);
+                configUrlInput.value = data.configUrl;
+            } else {
+                configUrlInput.value = CONFIG.fullUrl;
+            }
+
             if (data.searchPaths && Array.isArray(data.searchPaths)) {
                 // Migration: convert old string[] format to {path, checked}[]
                 searchPaths = data.searchPaths.map(p => {

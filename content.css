@@ -225,7 +225,7 @@
 .sp-refresh-hint { font-size: 11px; color: #999; margin-top: 6px; text-align: center; }
 
 /* Import / Export */
-.sp-import-export-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; }
+.sp-import-export-section { margin-bottom: 20px; }
 .sp-ie-row { display: flex; gap: 8px; }
 .sp-ie-btn {
     flex: 1; padding: 10px; border: none; border-radius: 8px;
