@@ -20,9 +20,9 @@
     background: #fff;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    width: 700px;
-    max-width: 90vw;
-    max-height: 80vh;
+    width: 900px;
+    max-width: 95vw;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -83,7 +83,8 @@
 .sp-search-input-wrap { flex: 1; position: relative; display: flex; align-items: center; }
 .sp-search-icon { position: absolute; left: 12px; font-size: 16px; pointer-events: none; color: #999; }
 .sp-search-input {
-    width: 100%; padding: 10px 36px 10px 38px;
+    width: 100%; padding: 0 36px 0 38px;
+    height: 44px; box-sizing: border-box;
     border: 2px solid #ddd; border-radius: 8px;
     font-size: 15px; outline: none; transition: border-color 0.2s;
 }
@@ -96,7 +97,8 @@
 .sp-clear-btn.sp-visible { display: block; }
 
 .sp-filter-select {
-    padding: 10px 8px;
+    padding: 0 12px;
+    height: 44px; box-sizing: border-box;
     border: 2px solid #ddd;
     border-radius: 8px;
     font-size: 13px;
@@ -104,8 +106,9 @@
     background: #fff;
     color: #333;
     cursor: pointer;
-    max-width: 160px;
+    max-width: 350px;
     transition: border-color 0.2s;
+    text-overflow: ellipsis;
 }
 .sp-filter-select:focus { border-color: #0078d4; }
 
