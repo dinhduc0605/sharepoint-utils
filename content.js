@@ -23,7 +23,7 @@
 
     // searchPaths: array of { path: string, checked: boolean }
     let searchPaths = [];
-    const fileCache = new Map();
+    const fileData = new Map();
     let debounceTimer = null;
     let isLoading = false;
     let lastSearchResults = []; // store last search results for re-filtering
@@ -192,12 +192,12 @@
     // Refresh - only re-fetch checked folders
     refreshBtn.addEventListener("click", async () => {
         const checkedRoots = getCheckedRoots();
-        checkedRoots.forEach(r => fileCache.delete(r));
+        checkedRoots.forEach(r => fileData.delete(r));
 
         // Also remove from storage
-        const cacheObj = {};
-        fileCache.forEach((value, key) => { cacheObj[key] = value; });
-        chrome.storage.local.set({ fileCache: cacheObj });
+        const dataObj = {};
+        fileData.forEach((value, key) => { dataObj[key] = value; });
+        chrome.storage.local.set({ fileData: dataObj });
 
         refreshBtn.disabled = true;
         refreshBtn.textContent = "⏳ Refreshing...";
@@ -265,10 +265,10 @@
     function removePath(path) {
         if (!confirm('Remove subfolder "' + path + '" and its cached files?')) return;
         searchPaths = searchPaths.filter(p => p.path !== path);
-        fileCache.delete(CONFIG.folderPath + path);
+        fileData.delete(CONFIG.folderPath + path);
         renderPathList();
         savePaths();
-        saveCache();
+        saveData();
         updateFilterOptions();
     }
 
@@ -285,7 +285,7 @@
             return;
         }
         searchPaths.forEach((item, index) => {
-            const cached = fileCache.get(CONFIG.folderPath + item.path);
+            const cached = fileData.get(CONFIG.folderPath + item.path);
             const fileCount = cached ? cached.files.length : 0;
 
             const row = document.createElement("div");
@@ -322,10 +322,10 @@
                         if (!newPath.startsWith("/")) newPath = "/" + newPath;
                         if (newPath.length > 1 && newPath.endsWith("/")) newPath = newPath.slice(0, -1);
                         // Remove old cache
-                        fileCache.delete(CONFIG.folderPath + item.path);
+                        fileData.delete(CONFIG.folderPath + item.path);
                         item.path = newPath;
                         savePaths();
-                        saveCache();
+                        saveData();
                     }
                     textEl.textContent = item.path;
                     textEl.style.display = "";
@@ -363,7 +363,7 @@
     function exportCSV() {
         const rows = [];
         // Header
-        rows.push("type,path,checked,name,serverRelativeUrl,size,modified,cacheKey");
+        rows.push("type,path,checked,name,serverRelativeUrl,size,modified,folderKey");
 
         // PATH rows
         searchPaths.forEach(item => {
@@ -374,13 +374,13 @@
         });
 
         // FILE rows
-        fileCache.forEach((cacheEntry, cacheKey) => {
-            (cacheEntry.files || []).forEach(file => {
+        fileData.forEach((folderEntry, folderKey) => {
+            (folderEntry.files || []).forEach(file => {
                 rows.push([
                     "FILE", "", "",
                     csvEscape(file.name), csvEscape(file.path),
                     file.size || 0, csvEscape(file.modified),
-                    csvEscape(cacheKey)
+                    csvEscape(folderKey)
                 ].join(","));
             });
         });
@@ -394,7 +394,7 @@
         a.click();
         URL.revokeObjectURL(url);
 
-        showSettingsStatus("success", "✅ Exported " + searchPaths.length + " paths & " + countCachedFiles() + " files");
+        showSettingsStatus("success", "✅ Exported " + searchPaths.length + " paths & " + countStoredFiles() + " files");
         setTimeout(() => showSettingsStatus("", ""), 3000);
     }
 
@@ -424,27 +424,27 @@
                         const serverPath = cols[4] || "";
                         const size = parseInt(cols[5]) || 0;
                         const modified = cols[6] || "";
-                        const cacheKey = cols[7] || "";
+                        const folderKey = cols[7] || "";
 
-                        if (!cacheKey || !name) continue;
-                        if (!newCache.has(cacheKey)) {
-                            newCache.set(cacheKey, { files: [], time: Date.now() });
+                        if (!folderKey || !name) continue;
+                        if (!newCache.has(folderKey)) {
+                            newCache.set(folderKey, { files: [], time: Date.now() });
                         }
-                        newCache.get(cacheKey).files.push({ name, path: serverPath, size, modified });
+                        newCache.get(folderKey).files.push({ name, path: serverPath, size, modified });
                     }
                 }
 
                 // Apply imported data
                 searchPaths = newPaths;
-                fileCache.clear();
-                newCache.forEach((v, k) => fileCache.set(k, v));
+                fileData.clear();
+                newCache.forEach((v, k) => fileData.set(k, v));
 
                 savePaths();
-                saveCache();
+                saveData();
                 renderPathList();
                 updateFilterOptions();
 
-                showSettingsStatus("success", "✅ Imported " + newPaths.length + " paths & " + countCachedFiles() + " files");
+                showSettingsStatus("success", "✅ Imported " + newPaths.length + " paths & " + countStoredFiles() + " files");
                 setTimeout(() => showSettingsStatus("", ""), 3000);
             } catch (err) {
                 showSettingsStatus("error", "❌ Import failed: " + err.message);
@@ -481,9 +481,9 @@
         return result;
     }
 
-    function countCachedFiles() {
+    function countStoredFiles() {
         let count = 0;
-        fileCache.forEach(entry => { count += (entry.files || []).length; });
+        fileData.forEach(entry => { count += (entry.files || []).length; });
         return count;
     }
 
@@ -492,15 +492,15 @@
     // ============================================
     function savePaths() { chrome.storage.local.set({ searchPaths }); }
 
-    function saveCache() {
-        const cacheObj = {};
-        fileCache.forEach((value, key) => { cacheObj[key] = value; });
-        chrome.storage.local.set({ fileCache: cacheObj });
+    function saveData() {
+        const dataObj = {};
+        fileData.forEach((value, key) => { dataObj[key] = value; });
+        chrome.storage.local.set({ fileData: dataObj });
     }
 
     async function restoreState() {
         try {
-            const data = await chrome.storage.local.get(["searchPaths", "fileCache"]);
+            const data = await chrome.storage.local.get(["searchPaths", "fileData"]);
             if (data.searchPaths && Array.isArray(data.searchPaths)) {
                 // Migration: convert old string[] format to {path, checked}[]
                 searchPaths = data.searchPaths.map(p => {
@@ -510,9 +510,9 @@
                 renderPathList();
                 updateFilterOptions();
             }
-            if (data.fileCache && typeof data.fileCache === "object") {
-                for (const [key, value] of Object.entries(data.fileCache)) {
-                    fileCache.set(key, value);
+            if (data.fileData && typeof data.fileData === "object") {
+                for (const [key, value] of Object.entries(data.fileData)) {
+                    fileData.set(key, value);
                 }
                 // Re-render to show file counts
                 renderPathList();
@@ -626,11 +626,11 @@
 
         for (const root of roots) {
             const files = await loadFilesFromFolder(root);
-            fileCache.set(root, { files, time: Date.now() });
+            fileData.set(root, { files, time: Date.now() });
             allFiles.push(...files);
         }
 
-        saveCache();
+        saveData();
         renderPathList();
         return allFiles;
     }
@@ -642,7 +642,7 @@
         const toLoad = [];
 
         for (const root of roots) {
-            const cached = fileCache.get(root);
+            const cached = fileData.get(root);
             if (cached) {
                 allFiles.push(...cached.files);
             } else {
@@ -654,11 +654,11 @@
 
         for (const root of toLoad) {
             const files = await loadFilesFromFolder(root);
-            fileCache.set(root, { files, time: Date.now() });
+            fileData.set(root, { files, time: Date.now() });
             allFiles.push(...files);
         }
 
-        saveCache();
+        saveData();
         // Update file counts in settings
         renderPathList();
         return allFiles;
