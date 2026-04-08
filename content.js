@@ -110,8 +110,9 @@
                 </div>
             </div>
 
-            <div class="sp-footer">
+            <div class="sp-footer" style="display:flex;">
                 <span id="sp-connection-status">⏳ Checking connection...</span>
+                <span id="sp-sync-status" style="margin-left:auto;color:#888;font-size:12px;"></span>
             </div>
         </div>
     `;
@@ -132,7 +133,24 @@
     const resultsEl = document.getElementById("sp-results");
     const closeBtn = document.getElementById("sp-close-btn");
     const connectionEl = document.getElementById("sp-connection-status");
+    const syncStatusEl = document.getElementById("sp-sync-status");
     const settingsStatusEl = document.getElementById("sp-settings-status");
+
+    function updateSyncStatusLabel(timeStr, changesCount) {
+        if (!syncStatusEl) return;
+        if (!timeStr) {
+            syncStatusEl.textContent = "";
+            return;
+        }
+        const displayTime = new Date(timeStr).toLocaleTimeString();
+        let text = `Auto-synced: ${displayTime}`;
+        if (changesCount !== undefined && changesCount > 0) {
+             text += ` (${changesCount} changes)`;
+        } else if (changesCount === 0) {
+             text += ` (0 changes)`;
+        }
+        syncStatusEl.textContent = text;
+    }
     const filterSelect = document.getElementById("sp-filter-select");
     const exportBtn = document.getElementById("sp-export-btn");
     const importBtn = document.getElementById("sp-import-btn");
@@ -559,15 +577,61 @@
     // ============================================
     function savePaths() { chrome.storage.local.set({ searchPaths }); }
 
-    function saveData() {
+    function saveData(changesCount = 0) {
         const dataObj = {};
         fileData.forEach((value, key) => { dataObj[key] = value; });
-        chrome.storage.local.set({ fileData: dataObj });
+        const timeNow = new Date().toISOString();
+        chrome.storage.local.set({ 
+            fileData: dataObj,
+            lastSyncTime: timeNow,
+            lastSyncChanges: changesCount
+        });
+        updateSyncStatusLabel(timeNow, changesCount);
     }
+
+    // ============================================
+    // Listen for Background Updates
+    // ============================================
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === "local" && changes.fileData) {
+            const newData = changes.fileData.newValue;
+            if (newData) {
+                // Update local memory cache
+                for (const [key, value] of Object.entries(newData)) {
+                    fileData.set(key, value);
+                }
+                
+                // Re-render path list to update file counts
+                renderPathList();
+
+                // If user is actively searching, re-run search to show new files
+                if (searchInput.value.trim().length >= MIN_QUERY_LENGTH) {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => handleSearch(), 300);
+                }
+            }
+        }
+        if (namespace === "local" && changes.lastSyncTime) {
+            const time = changes.lastSyncTime.newValue;
+            // if changes object contains lastSyncChanges, use it. Otherwise, assume 0 for manual sync
+            const changesCount = changes.lastSyncChanges ? changes.lastSyncChanges.newValue : 0;
+            
+            updateSyncStatusLabel(time, changesCount);
+
+            if (settingsStatusEl) {
+                showSettingsStatus("success", `🔄 Auto-synced at ${new Date(time).toLocaleTimeString()} (${changesCount} updated)`);
+                setTimeout(() => showSettingsStatus("", ""), 4000);
+            }
+        }
+    });
 
     async function restoreState() {
         try {
-            const data = await chrome.storage.local.get(["searchPaths", "fileData", "configUrl"]);
+            const data = await chrome.storage.local.get(["searchPaths", "fileData", "configUrl", "lastSyncTime", "lastSyncChanges"]);
+            
+            if (data.lastSyncTime) {
+                updateSyncStatusLabel(data.lastSyncTime, data.lastSyncChanges);
+            }
             
             if (data.configUrl) {
                 parseAndApplyConfigUrl(data.configUrl, false);
