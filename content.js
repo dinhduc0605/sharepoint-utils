@@ -92,7 +92,7 @@
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Add Subfolder</div>
                         <div class="sp-path-add-row">
-                            <input type="text" class="sp-path-input" id="sp-path-input" placeholder="/subfolder/path" autocomplete="off">
+                            <input type="text" class="sp-path-input" id="sp-path-input" placeholder="/subfolder/path or SharePoint folder URL" autocomplete="off">
                             <button class="sp-add-path-btn" id="sp-add-path-btn">+ Add</button>
                         </div>
                     </div>
@@ -342,10 +342,16 @@
     }
 
     function addPath() {
-        let path = pathInput.value.trim();
+        let path;
+        try {
+            path = normalizeSubfolderInput(pathInput.value);
+        } catch (e) {
+            showSettingsStatus("error", "❌ " + e.message);
+            setTimeout(() => showSettingsStatus("", ""), 3000);
+            return;
+        }
+
         if (!path) return;
-        if (!path.startsWith("/")) path = "/" + path;
-        if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
         if (searchPaths.some(p => p.path === path)) { pathInput.value = ""; return; }
 
         searchPaths.push({ path, checked: true });
@@ -353,6 +359,48 @@
         renderPathList();
         savePaths();
         updateFilterOptions();
+    }
+
+    function normalizeSubfolderInput(rawInput) {
+        const value = (rawInput || "").trim();
+        if (!value) return "";
+
+        let path = value;
+
+        if (/^https?:\/\//i.test(value)) {
+            path = extractSubfolderFromUrl(value);
+        }
+
+        if (!path.startsWith("/")) path = "/" + path;
+        if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+        return path;
+    }
+
+    function extractSubfolderFromUrl(inputUrl) {
+        let url;
+        try {
+            url = new URL(inputUrl);
+        } catch (e) {
+            throw new Error("Invalid subfolder URL.");
+        }
+
+        let folderPath = url.searchParams.get("id") || decodeURIComponent(url.pathname);
+        folderPath = decodeURIComponent(folderPath);
+
+        if (!folderPath.startsWith(CONFIG.folderPath)) {
+            throw new Error("URL is outside the current document library.");
+        }
+
+        let relativePath = folderPath.slice(CONFIG.folderPath.length);
+        if (!relativePath) {
+            throw new Error("The URL points to the document library root, not a subfolder.");
+        }
+
+        if (!relativePath.startsWith("/")) {
+            relativePath = "/" + relativePath;
+        }
+
+        return relativePath;
     }
 
     function removePath(path) {
