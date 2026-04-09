@@ -94,6 +94,7 @@
                         <div class="sp-path-add-row">
                             <input type="text" class="sp-path-input" id="sp-path-input" placeholder="/subfolder/path or SharePoint folder URL" autocomplete="off">
                             <button class="sp-add-path-btn" id="sp-add-path-btn">+ Add</button>
+                            <button class="sp-add-path-btn" id="sp-current-page-btn">Current Page</button>
                         </div>
                     </div>
                     <div class="sp-settings-section">
@@ -132,6 +133,7 @@
     const stopRefreshBtn = document.getElementById("sp-stop-refresh-btn");
     const pathInput = document.getElementById("sp-path-input");
     const addPathBtn = document.getElementById("sp-add-path-btn");
+    const currentPageBtn = document.getElementById("sp-current-page-btn");
     const pathListEl = document.getElementById("sp-path-list");
     const statusEl = document.getElementById("sp-status");
     const resultsEl = document.getElementById("sp-results");
@@ -272,6 +274,7 @@
 
     // Path management
     addPathBtn.addEventListener("click", addPath);
+    currentPageBtn.addEventListener("click", useCurrentPageUrl);
     pathInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") addPath();
     });
@@ -359,6 +362,11 @@
         renderPathList();
         savePaths();
         updateFilterOptions();
+    }
+
+    function useCurrentPageUrl() {
+        pathInput.value = window.location.href;
+        pathInput.focus();
     }
 
     function normalizeSubfolderInput(rawInput) {
@@ -772,11 +780,11 @@
 
         try {
             isLoading = true;
-            showStatus("loading", "Loading file list...");
-            const allFiles = await loadFilesForPaths();
+            showStatus("loading", "Loading cached file list...");
+            const allFiles = getAllCachedFiles();
 
-            if (searchPaths.length === 0 && allFiles.length === 0) {
-                showStatus("error", "ℹ️ Add a subfolder or import/refresh data before searching.");
+            if (allFiles.length === 0) {
+                showStatus("error", "ℹ️ No cached files found. Use Re-fetch in Settings first.");
                 lastSearchResults = [];
                 lastQuery = query;
                 resultsEl.innerHTML = "";
@@ -863,39 +871,6 @@
         }
 
         saveData();
-        renderPathList();
-        return allFiles;
-    }
-
-    // Load ALL folders (used by Search)
-    async function loadFilesForPaths() {
-        if (searchPaths.length === 0) {
-            return getAllCachedFiles();
-        }
-
-        const roots = getSearchRoots();
-        const allFiles = [];
-        const toLoad = [];
-
-        for (const root of roots) {
-            const cached = fileData.get(root);
-            if (cached) {
-                allFiles.push(...cached.files);
-            } else {
-                toLoad.push(root);
-            }
-        }
-
-        if (toLoad.length === 0) return allFiles;
-
-        for (const root of toLoad) {
-            const files = await loadFilesFromFolder(root);
-            fileData.set(root, { files, time: Date.now() });
-            allFiles.push(...files);
-        }
-
-        saveData();
-        // Update file counts in settings
         renderPathList();
         return allFiles;
     }
