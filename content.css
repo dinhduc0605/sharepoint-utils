@@ -117,6 +117,7 @@
 /* Status */
 .sp-status { padding: 8px 20px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .sp-status.sp-hidden { display: none; }
+.sp-hidden { display: none !important; }
 .sp-status.sp-loading { background: #e8f4fd; color: #0078d4; }
 .sp-status.sp-error { background: #fde7e9; color: #d13438; }
 .sp-status.sp-success { background: #dff6dd; color: #107c10; }
@@ -218,13 +219,21 @@
 .sp-path-remove:hover { color: #d13438; background: #fde7e9; }
 
 .sp-refresh-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; }
+.sp-refresh-actions { display: flex; gap: 8px; }
 .sp-refresh-full-btn {
-    width: 100%; padding: 10px; background: #0078d4; color: white;
+    flex: 1; padding: 10px; background: #0078d4; color: white;
     border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
     cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .sp-refresh-full-btn:hover { background: #106ebe; }
 .sp-refresh-full-btn:disabled { background: #ccc; cursor: not-allowed; }
+.sp-refresh-stop-btn {
+    padding: 10px 14px; background: #d13438; color: white;
+    border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.sp-refresh-stop-btn:hover { background: #b02a2e; }
+.sp-refresh-stop-btn:disabled { background: #e5aeb0; cursor: not-allowed; }
 .sp-refresh-hint { font-size: 11px; color: #999; margin-top: 6px; text-align: center; }
 
 /* Import / Export */

@@ -99,12 +99,15 @@
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Subfolders</div>
                         <div class="sp-path-list" id="sp-path-list">
-                            <div class="sp-path-list-empty">No subfolders added. Search will scan all of Shared Documents.</div>
+                            <div class="sp-path-list-empty">No subfolders added. Search uses cached files only until you add a subfolder or run a manual refresh.</div>
                         </div>
                     </div>
                     <div class="sp-refresh-section">
                         <div class="sp-status sp-hidden" id="sp-settings-status"></div>
-                        <button class="sp-refresh-full-btn" id="sp-refresh-btn">🔄 Refresh checked folders</button>
+                        <div class="sp-refresh-actions">
+                            <button class="sp-refresh-full-btn" id="sp-refresh-btn">🔄 Re-fetch checked folders</button>
+                            <button class="sp-refresh-stop-btn sp-hidden" id="sp-stop-refresh-btn">⏹ Stop</button>
+                        </div>
                         <div class="sp-refresh-hint">Re-fetch file list from checked subfolders</div>
                     </div>
                 </div>
@@ -126,6 +129,7 @@
     const searchInput = document.getElementById("sp-search-input");
     const clearBtn = document.getElementById("sp-clear-btn");
     const refreshBtn = document.getElementById("sp-refresh-btn");
+    const stopRefreshBtn = document.getElementById("sp-stop-refresh-btn");
     const pathInput = document.getElementById("sp-path-input");
     const addPathBtn = document.getElementById("sp-add-path-btn");
     const pathListEl = document.getElementById("sp-path-list");
@@ -135,6 +139,9 @@
     const connectionEl = document.getElementById("sp-connection-status");
     const syncStatusEl = document.getElementById("sp-sync-status");
     const settingsStatusEl = document.getElementById("sp-settings-status");
+    const DEFAULT_REFRESH_LABEL = "🔄 Re-fetch checked folders";
+    const FETCH_STOPPED_ERROR = "FETCH_STOPPED";
+    let activeRefreshController = null;
 
     function updateSyncStatusLabel(timeStr, changesCount) {
         if (!syncStatusEl) return;
@@ -220,33 +227,47 @@
 
     // Refresh - only re-fetch checked folders
     refreshBtn.addEventListener("click", async () => {
-        const checkedRoots = getCheckedRoots();
-        checkedRoots.forEach(r => fileData.delete(r));
+        if (activeRefreshController) return;
 
-        // Also remove from storage
-        const dataObj = {};
-        fileData.forEach((value, key) => { dataObj[key] = value; });
-        chrome.storage.local.set({ fileData: dataObj });
-
+        activeRefreshController = { cancelled: false };
         refreshBtn.disabled = true;
-        refreshBtn.textContent = "⏳ Refreshing...";
+        refreshBtn.textContent = "⏳ Re-fetching...";
+        stopRefreshBtn.classList.remove("sp-hidden");
+        stopRefreshBtn.disabled = false;
         try {
-            const files = await loadFilesForChecked();
-            showSettingsStatus("", ""); // CLEAR STATUS HERE
-            refreshBtn.textContent = "✅ Refreshed! (" + files.length + " files)";
+            const files = await loadFilesForChecked(activeRefreshController);
+            showSettingsStatus("", "");
+            refreshBtn.textContent = "✅ Re-fetched! (" + files.length + " files)";
             setTimeout(() => {
-                refreshBtn.textContent = "🔄 Refresh checked folders";
-                refreshBtn.disabled = false;
+                resetRefreshControls();
             }, 2000);
         } catch (e) {
-            showSettingsStatus("error", "❌ Failed: " + e.message); // SHOW ERROR HERE
-            refreshBtn.textContent = "❌ Failed";
-            setTimeout(() => {
-                showSettingsStatus("", "");
-                refreshBtn.textContent = "🔄 Refresh checked folders";
-                refreshBtn.disabled = false;
-            }, 3000);
+            if (e.message === FETCH_STOPPED_ERROR) {
+                showSettingsStatus("error", "⏹ Re-fetch stopped.");
+                refreshBtn.textContent = "⏹ Stopped";
+                setTimeout(() => {
+                    showSettingsStatus("", "");
+                    resetRefreshControls();
+                }, 1500);
+            } else {
+                showSettingsStatus("error", "❌ Failed: " + e.message);
+                refreshBtn.textContent = "❌ Failed";
+                setTimeout(() => {
+                    showSettingsStatus("", "");
+                    resetRefreshControls();
+                }, 3000);
+            }
+        } finally {
+            activeRefreshController = null;
         }
+    });
+
+    stopRefreshBtn.addEventListener("click", () => {
+        if (!activeRefreshController) return;
+        activeRefreshController.cancelled = true;
+        stopRefreshBtn.disabled = true;
+        stopRefreshBtn.textContent = "⏳ Stopping...";
+        showSettingsStatus("loading", "Stopping after the current request finishes...");
     });
 
     // Path management
@@ -353,7 +374,7 @@
     function renderPathList() {
         pathListEl.innerHTML = "";
         if (searchPaths.length === 0) {
-            pathListEl.innerHTML = '<div class="sp-path-list-empty">No subfolders added. Search will scan all of Shared Documents.</div>';
+            pathListEl.innerHTML = '<div class="sp-path-list-empty">No subfolders added. Search uses cached files only until you add a subfolder or run a manual refresh.</div>';
             return;
         }
         searchPaths.forEach((item, index) => {
@@ -572,6 +593,14 @@
         return count;
     }
 
+    function resetRefreshControls() {
+        refreshBtn.textContent = DEFAULT_REFRESH_LABEL;
+        refreshBtn.disabled = false;
+        stopRefreshBtn.textContent = "⏹ Stop";
+        stopRefreshBtn.disabled = false;
+        stopRefreshBtn.classList.add("sp-hidden");
+    }
+
     // ============================================
     // Persistent Storage
     // ============================================
@@ -698,6 +727,14 @@
             showStatus("loading", "Loading file list...");
             const allFiles = await loadFilesForPaths();
 
+            if (searchPaths.length === 0 && allFiles.length === 0) {
+                showStatus("error", "ℹ️ Add a subfolder or import/refresh data before searching.");
+                lastSearchResults = [];
+                lastQuery = query;
+                resultsEl.innerHTML = "";
+                return;
+            }
+
             const currentQuery = searchInput.value.trim();
             if (currentQuery.length < MIN_QUERY_LENGTH) { showStatus("", ""); return; }
 
@@ -745,6 +782,12 @@
     // ============================================
     function delayMs(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+    function throwIfRefreshCancelled(controller) {
+        if (controller && controller.cancelled) {
+            throw new Error(FETCH_STOPPED_ERROR);
+        }
+    }
+
     // ALL paths - used for search (ignores checkbox)
     function getSearchRoots() {
         if (searchPaths.length === 0) return [CONFIG.folderPath];
@@ -759,12 +802,14 @@
     }
 
     // Load only CHECKED folders (used by Refresh)
-    async function loadFilesForChecked() {
+    async function loadFilesForChecked(controller) {
         const roots = getCheckedRoots();
         const allFiles = [];
 
         for (const root of roots) {
-            const files = await loadFilesFromFolder(root);
+            throwIfRefreshCancelled(controller);
+            const files = await loadFilesFromFolder(root, controller);
+            throwIfRefreshCancelled(controller);
             fileData.set(root, { files, time: Date.now() });
             allFiles.push(...files);
         }
@@ -776,6 +821,10 @@
 
     // Load ALL folders (used by Search)
     async function loadFilesForPaths() {
+        if (searchPaths.length === 0) {
+            return getAllCachedFiles();
+        }
+
         const roots = getSearchRoots();
         const allFiles = [];
         const toLoad = [];
@@ -803,11 +852,22 @@
         return allFiles;
     }
 
-    async function loadFilesFromFolder(rootPath) {
+    function getAllCachedFiles() {
+        const allFiles = [];
+        fileData.forEach(entry => {
+            if (entry && Array.isArray(entry.files)) {
+                allFiles.push(...entry.files);
+            }
+        });
+        return allFiles;
+    }
+
+    async function loadFilesFromFolder(rootPath, controller) {
         const allFiles = [];
         const queue = [rootPath];
 
         while (queue.length > 0) {
+            throwIfRefreshCancelled(controller);
             const batch = queue.splice(0, BATCH_SIZE);
             const batchResults = await Promise.all(
                 batch.map(fp => fetchFolderContents(fp))
@@ -820,7 +880,10 @@
 
             showSettingsStatus("loading", "Loading... (" + allFiles.length + " files, " + queue.length + " folders remaining)");
 
-            if (queue.length > 0) await delayMs(DELAY_MS);
+            if (queue.length > 0) {
+                await delayMs(DELAY_MS);
+                throwIfRefreshCancelled(controller);
+            }
         }
 
         return allFiles;
