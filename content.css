@@ -23,6 +23,7 @@
     width: 900px;
     max-width: 95vw;
     max-height: 85vh;
+    position: relative;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -254,6 +255,93 @@
     padding: 8px 20px; text-align: center;
     border-top: 1px solid #f0f0f0; font-size: 11px; color: #999;
 }
+.sp-footer-sync-btn {
+    margin-left: 10px;
+    padding: 4px 10px;
+    border: 1px solid #d0d0d0;
+    border-radius: 999px;
+    background: #fff;
+    color: #555;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.sp-footer-sync-btn:hover { background: #f5f5f5; color: #222; }
+.sp-footer-sync-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.sp-footer-sync-result {
+    margin-left: 10px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+.sp-footer-sync-result-loading { color: #0078d4; }
+.sp-footer-sync-result-success { color: #107c10; }
+.sp-footer-sync-result-error { color: #d13438; }
+
+.sp-inline-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.sp-inline-modal {
+    width: 100%;
+    max-width: 440px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    padding: 18px;
+}
+.sp-inline-modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #222;
+}
+.sp-inline-modal-subtitle {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #666;
+}
+.sp-inline-modal-textarea {
+    width: 100%;
+    min-height: 100px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    resize: vertical;
+    font: inherit;
+    color: #222;
+    box-sizing: border-box;
+    outline: none;
+}
+.sp-inline-modal-textarea:focus { border-color: #0078d4; }
+.sp-inline-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+}
+.sp-inline-modal-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.sp-inline-modal-btn-secondary {
+    background: #f3f3f3;
+    color: #333;
+}
+.sp-inline-modal-btn-secondary:hover { background: #e7e7e7; }
+.sp-inline-modal-btn-primary {
+    background: #0078d4;
+    color: #fff;
+}
+.sp-inline-modal-btn-primary:hover { background: #106ebe; }
 
 /* Scrollbar */
 .sp-results::-webkit-scrollbar, .sp-settings-content::-webkit-scrollbar { width: 6px; }

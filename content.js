@@ -117,6 +117,19 @@
             <div class="sp-footer" style="display:flex;">
                 <span id="sp-connection-status">⏳ Checking connection...</span>
                 <span id="sp-sync-status" style="margin-left:auto;color:#888;font-size:12px;"></span>
+                <span class="sp-footer-sync-result" id="sp-footer-sync-result"></span>
+                <button class="sp-footer-sync-btn" id="sp-footer-sync-btn" title="Run auto-sync now">🔄 Sync</button>
+            </div>
+        </div>
+        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-inline-modal-backdrop">
+            <div class="sp-inline-modal" id="sp-inline-modal" role="dialog" aria-modal="true" aria-labelledby="sp-inline-modal-title">
+                <div class="sp-inline-modal-title" id="sp-inline-modal-title">Check In Comment</div>
+                <div class="sp-inline-modal-subtitle" id="sp-inline-modal-subtitle"></div>
+                <textarea class="sp-inline-modal-textarea" id="sp-inline-modal-textarea" placeholder="Add a check-in comment"></textarea>
+                <div class="sp-inline-modal-actions">
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-inline-modal-cancel-btn">Cancel</button>
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-primary" id="sp-inline-modal-ok-btn">OK</button>
+                </div>
             </div>
         </div>
     `;
@@ -140,10 +153,21 @@
     const closeBtn = document.getElementById("sp-close-btn");
     const connectionEl = document.getElementById("sp-connection-status");
     const syncStatusEl = document.getElementById("sp-sync-status");
+    const footerSyncResultEl = document.getElementById("sp-footer-sync-result");
+    const footerSyncBtn = document.getElementById("sp-footer-sync-btn");
     const settingsStatusEl = document.getElementById("sp-settings-status");
+    const inlineModalBackdrop = document.getElementById("sp-inline-modal-backdrop");
+    const inlineModal = document.getElementById("sp-inline-modal");
+    const inlineModalSubtitleEl = document.getElementById("sp-inline-modal-subtitle");
+    const inlineModalTextarea = document.getElementById("sp-inline-modal-textarea");
+    const inlineModalCancelBtn = document.getElementById("sp-inline-modal-cancel-btn");
+    const inlineModalOkBtn = document.getElementById("sp-inline-modal-ok-btn");
     const DEFAULT_REFRESH_LABEL = "🔄 Re-fetch checked folders";
     const FETCH_STOPPED_ERROR = "FETCH_STOPPED";
+    const CHECKOUT_ICON = "📝";
+    const CHECKIN_ICON = "✅";
     let activeRefreshController = null;
+    let activeInlineModal = null;
 
     function updateSyncStatusLabel(timeStr, changesCount) {
         if (!syncStatusEl) return;
@@ -187,13 +211,28 @@
     // Events
     // ============================================
     closeBtn.addEventListener("click", closeModal);
+    footerSyncBtn.addEventListener("click", runAutoSyncNow);
     backdrop.addEventListener("click", (e) => {
         if (e.target === backdrop) closeModal();
     });
     document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && activeInlineModal) {
+            closeInlineModal(false);
+            return;
+        }
         if (e.key === "Escape" && document.getElementById("sp-search-backdrop")) closeModal();
     });
     modal.addEventListener("click", (e) => e.stopPropagation());
+    inlineModal.addEventListener("click", (e) => e.stopPropagation());
+    inlineModalBackdrop.addEventListener("click", () => closeInlineModal(false));
+    inlineModalCancelBtn.addEventListener("click", () => closeInlineModal(false));
+    inlineModalOkBtn.addEventListener("click", () => submitInlineModal());
+    inlineModalTextarea.addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+            e.preventDefault();
+            submitInlineModal();
+        }
+    });
 
     // Search input - live search with debounce
     searchInput.addEventListener("input", () => {
@@ -512,7 +551,7 @@
     function exportCSV() {
         const rows = [];
         // Header
-        rows.push("type,path,checked,name,serverRelativeUrl,size,modified,folderKey");
+        rows.push("type,path,checked,name,serverRelativeUrl,size,modified,folderKey,isCheckedOut");
 
         // URL row
         rows.push([
@@ -535,7 +574,7 @@
                     "FILE", "", "",
                     csvEscape(file.name), csvEscape(file.path),
                     file.size || 0, csvEscape(file.modified),
-                    csvEscape(folderKey)
+                    csvEscape(folderKey), file.isCheckedOut ? "true" : "false"
                 ].join(","));
             });
         });
@@ -587,12 +626,13 @@
                         const size = parseInt(cols[5]) || 0;
                         const modified = cols[6] || "";
                         const folderKey = cols[7] || "";
+                        const isCheckedOut = cols[8] === "true";
 
                         if (!folderKey || !name) continue;
                         if (!newCache.has(folderKey)) {
                             newCache.set(folderKey, { files: [], time: Date.now() });
                         }
-                        newCache.get(folderKey).files.push({ name, path: serverPath, size, modified });
+                        newCache.get(folderKey).files.push({ name, path: serverPath, size, modified, isCheckedOut });
                     }
                 }
 
@@ -662,9 +702,18 @@
     // ============================================
     function savePaths() { chrome.storage.local.set({ searchPaths }); }
 
-    function saveData(changesCount = 0) {
+    function buildFileDataObject() {
         const dataObj = {};
         fileData.forEach((value, key) => { dataObj[key] = value; });
+        return dataObj;
+    }
+
+    function saveFileDataOnly() {
+        chrome.storage.local.set({ fileData: buildFileDataObject() });
+    }
+
+    function saveData(changesCount = 0) {
+        const dataObj = buildFileDataObject();
         const timeNow = new Date().toISOString();
         chrome.storage.local.set({ 
             fileData: dataObj,
@@ -765,6 +814,63 @@
         } catch (e) {
             connectionEl.textContent = "⚠ Could not check connection";
             connectionEl.style.color = "#ff9800";
+        }
+    }
+
+    async function runAutoSyncNow() {
+        if (footerSyncBtn.disabled) return;
+
+        footerSyncBtn.disabled = true;
+        footerSyncBtn.textContent = "⏳ Syncing...";
+        setFooterSyncResult("loading", "Running...");
+        showSettingsStatus("loading", "Running auto-sync logic...");
+
+        try {
+            const response = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ action: "runAutoRefresh" }, (result) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                        return;
+                    }
+                    resolve(result);
+                });
+            });
+
+            if (!response || !response.success) {
+                throw new Error(response?.error || "Auto-sync request failed");
+            }
+
+            const data = response.data || {};
+            if (data.skipped) {
+                const message = "Skipped: " + describeAutoSyncSkipReason(data.reason);
+                showSettingsStatus("error", "ℹ️ Auto-sync skipped: " + describeAutoSyncSkipReason(data.reason));
+                setFooterSyncResult("error", message);
+            } else {
+                const message = "Success: " + (data.updatedCount || 0) + " updated";
+                showSettingsStatus("success", "🔄 Auto-sync ran (" + (data.updatedCount || 0) + " updated)");
+                setFooterSyncResult("success", message);
+            }
+        } catch (e) {
+            showSettingsStatus("error", "❌ Auto-sync failed: " + e.message);
+            setFooterSyncResult("error", "Failed: " + e.message);
+        } finally {
+            footerSyncBtn.disabled = false;
+            footerSyncBtn.textContent = "🔄 Sync";
+        }
+    }
+
+    function describeAutoSyncSkipReason(reason) {
+        if (reason === "missing_setup") return "missing config, cached data, or last sync time";
+        if (reason === "no_checked_paths") return "no checked subfolders";
+        return reason || "unknown reason";
+    }
+
+    function setFooterSyncResult(type, message) {
+        if (!footerSyncResultEl) return;
+        footerSyncResultEl.textContent = message || "";
+        footerSyncResultEl.className = "sp-footer-sync-result";
+        if (type) {
+            footerSyncResultEl.classList.add("sp-footer-sync-result-" + type);
         }
     }
 
@@ -920,7 +1026,7 @@
             const filesUrl = CONFIG.siteUrl +
                 "/_api/web/GetFolderByServerRelativeUrl('" +
                 encodeURIComponent(folderPath) +
-                "')/Files?$top=5000&$select=Name,ServerRelativeUrl,Length,TimeLastModified";
+                "')/Files?$top=5000&$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType";
 
             const filesData = await bgFetch(filesUrl, {
                 method: "GET",
@@ -932,7 +1038,8 @@
                     name: file.Name,
                     path: file.ServerRelativeUrl,
                     size: parseInt(file.Length || 0),
-                    modified: file.TimeLastModified || ""
+                    modified: file.TimeLastModified || "",
+                    isCheckedOut: isFileCheckedOut(file.CheckOutType)
                 });
             }
 
@@ -1000,8 +1107,14 @@
                 (file.size ? '<div class="sp-file-size">' + formatFileSize(file.size) + '</div>' : '') +
                 '</div>' +
                 '<div class="sp-file-actions">' +
+                '<button class="sp-action-btn sp-action-checkout" title="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '">' + getCheckoutActionIcon(file.isCheckedOut) + '</button>' +
                 '<button class="sp-action-btn sp-action-folder" title="Open folder">📂</button>' +
                 '</div>';
+
+            item.querySelector(".sp-action-checkout").addEventListener("click", async (e) => {
+                e.stopPropagation();
+                await toggleFileCheckout(file, item.querySelector(".sp-action-checkout"));
+            });
 
             item.querySelector(".sp-action-folder").addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -1010,6 +1123,106 @@
 
             resultsEl.appendChild(item);
         });
+    }
+
+    async function toggleFileCheckout(file, buttonEl) {
+        if (!buttonEl || buttonEl.disabled) return;
+
+        const nextAction = file.isCheckedOut ? "checkIn" : "checkOut";
+        const originalLabel = buttonEl.textContent;
+        buttonEl.disabled = true;
+        buttonEl.textContent = "⏳";
+
+        try {
+            if (nextAction === "checkOut") {
+                await sharePointCheckOut(file.path);
+                file.isCheckedOut = true;
+                buttonEl.textContent = getCheckoutActionIcon(true);
+                buttonEl.title = "Check in file";
+                showStatus("success", '✅ Checked out "' + escapeHtml(file.name) + '"');
+            } else {
+                const comment = await promptForCheckInComment(file.name);
+                if (comment === null) {
+                    buttonEl.textContent = originalLabel;
+                    return;
+                }
+                await sharePointCheckIn(file.path, comment);
+                file.isCheckedOut = false;
+                buttonEl.textContent = getCheckoutActionIcon(false);
+                buttonEl.title = "Check out file";
+                showStatus("success", '✅ Checked in "' + escapeHtml(file.name) + '"');
+            }
+            saveFileDataOnly();
+        } catch (error) {
+            buttonEl.textContent = originalLabel;
+            buttonEl.title = file.isCheckedOut ? "Check in file" : "Check out file";
+            showStatus("error", "❌ " + error.message);
+        } finally {
+            buttonEl.disabled = false;
+        }
+    }
+
+    async function sharePointCheckOut(serverRelativePath) {
+        const url = CONFIG.siteUrl +
+            "/_api/web/getfilebyserverrelativeurl('" +
+            encodeSharePointPath(serverRelativePath) +
+            "')/checkOut()";
+
+        await bgFetch(url, {
+            method: "POST",
+            headers: { "Accept": "application/json;odata=verbose" }
+        });
+    }
+
+    async function sharePointCheckIn(serverRelativePath, comment) {
+        const url = CONFIG.siteUrl +
+            "/_api/web/getfilebyserverrelativeurl('" +
+            encodeSharePointPath(serverRelativePath) +
+            "')/checkIn(comment='" +
+            encodeODataString(comment || "") +
+            "',checkintype=0)";
+
+        await bgFetch(url, {
+            method: "POST",
+            headers: { "Accept": "application/json;odata=verbose" }
+        });
+    }
+
+    function promptForCheckInComment(fileName) {
+        if (activeInlineModal) {
+            closeInlineModal(false);
+        }
+
+        inlineModalSubtitleEl.textContent = fileName ? 'Enter a check-in comment for "' + fileName + '"' : "Enter a check-in comment";
+        inlineModalTextarea.value = "";
+        inlineModalBackdrop.classList.remove("sp-hidden");
+        inlineModalOkBtn.disabled = false;
+        activeInlineModal = {};
+
+        setTimeout(() => {
+            inlineModalTextarea.focus();
+            inlineModalTextarea.select();
+        }, 0);
+
+        return new Promise((resolve) => {
+            activeInlineModal.resolve = resolve;
+        });
+    }
+
+    function submitInlineModal() {
+        if (!activeInlineModal) return;
+        closeInlineModal(true, inlineModalTextarea.value.trim());
+    }
+
+    function closeInlineModal(submitted, value) {
+        if (!activeInlineModal) return;
+        const resolver = activeInlineModal.resolve;
+        activeInlineModal = null;
+        inlineModalBackdrop.classList.add("sp-hidden");
+        inlineModalTextarea.value = "";
+        if (resolver) {
+            resolver(submitted ? value : null);
+        }
     }
 
     // ============================================
@@ -1063,6 +1276,24 @@
             : message;
         if (!message) settingsStatusEl.classList.add("sp-hidden");
         else settingsStatusEl.classList.remove("sp-hidden");
+    }
+
+    function encodeSharePointPath(path) {
+        return encodeURIComponent(String(path || "").replace(/'/g, "''"));
+    }
+
+    function encodeODataString(value) {
+        return encodeURIComponent(String(value || "").replace(/'/g, "''"));
+    }
+
+    function getCheckoutActionIcon(isCheckedOut) {
+        return isCheckedOut ? CHECKIN_ICON : CHECKOUT_ICON;
+    }
+
+    function isFileCheckedOut(checkOutType) {
+        const value = parseInt(checkOutType, 10);
+        if (Number.isNaN(value)) return false;
+        return value !== 2;
     }
 
     function getFileIcon(filename) {

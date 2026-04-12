@@ -36,6 +36,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .catch(() => sendResponse({ connected: false }));
         return true;
     }
+
+    if (request.action === "runAutoRefresh") {
+        performAutoRefresh()
+            .then(result => sendResponse({ success: true, data: result || {} }))
+            .catch(err => sendResponse({ success: false, error: err.message }));
+        return true;
+    }
 });
 
 async function handleSharePointFetch(url, options = {}) {
@@ -52,15 +59,62 @@ async function handleSharePointFetch(url, options = {}) {
     const results = await chrome.scripting.executeScript({
         target: { tabId },
         func: async (fetchUrl, fetchOptions) => {
+            async function getRequestDigest(targetUrl) {
+                const existingDigest = document.getElementById("__REQUESTDIGEST")?.value;
+                if (existingDigest) return existingDigest;
+
+                const parsedUrl = new URL(targetUrl);
+                const apiIndex = parsedUrl.pathname.indexOf("/_api/");
+                const webBasePath = apiIndex >= 0 ? parsedUrl.pathname.slice(0, apiIndex) : "";
+                const contextInfoUrl = parsedUrl.origin + webBasePath + "/_api/contextinfo";
+                const contextResponse = await fetch(contextInfoUrl, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Accept": "application/json;odata=verbose"
+                    }
+                });
+
+                if (!contextResponse.ok) {
+                    throw new Error("HTTP " + contextResponse.status + ": " + contextResponse.statusText);
+                }
+
+                const contextData = await contextResponse.json();
+                const digest = contextData?.d?.GetContextWebInformation?.FormDigestValue;
+                if (!digest) {
+                    throw new Error("Could not get SharePoint request digest");
+                }
+
+                return digest;
+            }
+
             try {
+                const method = (fetchOptions?.method || "GET").toUpperCase();
+                const headers = {
+                    ...(fetchOptions?.headers || {})
+                };
+
+                if (method !== "GET" && method !== "HEAD" && !headers["X-RequestDigest"]) {
+                    headers["X-RequestDigest"] = await getRequestDigest(fetchUrl);
+                }
+
                 const response = await fetch(fetchUrl, {
                     ...fetchOptions,
+                    headers,
                     credentials: "same-origin"
                 });
                 if (!response.ok) {
                     return { error: "HTTP " + response.status + ": " + response.statusText };
                 }
-                const data = await response.json();
+                const text = await response.text();
+                let data = null;
+                if (text) {
+                    try {
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        data = { raw: text };
+                    }
+                }
                 return { data };
             } catch (e) {
                 return { error: e.message };
@@ -104,11 +158,15 @@ async function performAutoRefresh() {
         const data = await chrome.storage.local.get(["configUrl", "searchPaths", "fileData", "lastSyncTime"]);
         const { configUrl, searchPaths, fileData, lastSyncTime } = data;
         
-        if (!configUrl || !fileData || !lastSyncTime || !searchPaths) return;
+        if (!configUrl || !fileData || !lastSyncTime || !searchPaths) {
+            return { skipped: true, reason: "missing_setup" };
+        }
         
         // Only fetch changes if we have checked paths
         const checkedPaths = searchPaths.filter(p => p.checked);
-        if (checkedPaths.length === 0 && searchPaths.length > 0) return;
+        if (checkedPaths.length === 0 && searchPaths.length > 0) {
+            return { skipped: true, reason: "no_checked_paths" };
+        }
 
         const url = new URL(configUrl);
         const siteUrl = url.origin + '/' + url.pathname.split('/').filter(Boolean).slice(0,2).join('/');
@@ -131,8 +189,8 @@ async function performAutoRefresh() {
 
         const rows = searchData?.d?.query?.PrimaryQueryResult?.RelevantResults?.Table?.Rows?.results || [];
         if (rows.length === 0) {
-            await chrome.storage.local.set({ lastSyncTime: new Date().toISOString() });
-            return;
+            await chrome.storage.local.set({ lastSyncTime: new Date().toISOString(), lastSyncChanges: 0 });
+            return { skipped: false, updatedCount: 0 };
         }
 
         let updatedCount = 0;
@@ -213,11 +271,13 @@ async function performAutoRefresh() {
             storeUpdates.fileData = fileData;
         }
         await chrome.storage.local.set(storeUpdates);
+        return { skipped: false, updatedCount };
 
     } catch (e) {
         // Can fail if no SharePoint tab is open, which is fine
         if (e.message !== "NO_SP_TAB") {
             console.error("AutoRefresh failed:", e);
         }
+        throw e;
     }
 }
