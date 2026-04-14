@@ -21,6 +21,7 @@
     const DELAY_MS = 300;
     const MIN_QUERY_LENGTH = 3;
     const DEBOUNCE_MS = 300;
+    const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb"]);
 
     // searchPaths: array of { path: string, checked: boolean }
     let searchPaths = [];
@@ -29,6 +30,7 @@
     let isLoading = false;
     let lastSearchResults = []; // store last search results for re-filtering
     let lastQuery = "";
+    let currentPageFile = null;
 
     // ============================================
     // Build Modal HTML
@@ -42,6 +44,17 @@
                 <span class="sp-search-header-icon">📂</span>
                 <h2>SharePoint Utils</h2>
                 <button class="sp-search-close" id="sp-close-btn" title="Close (Esc)">✕</button>
+            </div>
+
+            <div class="sp-current-file sp-hidden" id="sp-current-file">
+                <div class="sp-current-file-info">
+                    <div class="sp-current-file-label">Current file</div>
+                    <div class="sp-current-file-name" id="sp-current-file-name"></div>
+                </div>
+                <div class="sp-file-actions">
+                    <button class="sp-action-btn sp-action-checkout" id="sp-current-file-checkout-btn" title="Check out file">📝</button>
+                    <button class="sp-action-btn sp-action-folder" id="sp-current-file-folder-btn" title="Open folder">📂</button>
+                </div>
             </div>
 
             <!-- Tab Bar -->
@@ -152,6 +165,10 @@
     const connectionEl = document.getElementById("sp-connection-status");
     const syncStatusEl = document.getElementById("sp-sync-status");
     const settingsStatusEl = document.getElementById("sp-settings-status");
+    const currentFileEl = document.getElementById("sp-current-file");
+    const currentFileNameEl = document.getElementById("sp-current-file-name");
+    const currentFileCheckoutBtn = document.getElementById("sp-current-file-checkout-btn");
+    const currentFileFolderBtn = document.getElementById("sp-current-file-folder-btn");
     const inlineModalBackdrop = document.getElementById("sp-inline-modal-backdrop");
     const inlineModal = document.getElementById("sp-inline-modal");
     const inlineModalSubtitleEl = document.getElementById("sp-inline-modal-subtitle");
@@ -227,6 +244,17 @@
             e.preventDefault();
             submitInlineModal();
         }
+    });
+    currentFileCheckoutBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!currentPageFile) return;
+        await toggleFileCheckout(currentPageFile, currentFileCheckoutBtn);
+        renderCurrentPageFile();
+    });
+    currentFileFolderBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!currentPageFile) return;
+        window.open(getFolderUrl(currentPageFile.path), "_blank");
     });
 
     // Search input - live search with debounce
@@ -334,6 +362,7 @@
     searchInput.focus();
     restoreState();
     checkConnection();
+    detectCurrentPageFile();
 
     // ============================================
     // Close Modal
@@ -812,6 +841,38 @@
         }
     }
 
+    async function detectCurrentPageFile() {
+        const file = getCurrentPageFileCandidate();
+        if (!file) {
+            currentPageFile = null;
+            renderCurrentPageFile();
+            return;
+        }
+
+        try {
+            const fileUrl = getCurrentPageFileDetailsUrl(file);
+            if (fileUrl) {
+                const fileDataResponse = await bgFetch(fileUrl, {
+                    method: "GET",
+                    headers: { "Accept": "application/json;odata=verbose" }
+                });
+                const details = fileDataResponse?.d;
+                if (details) {
+                    file.name = details.Name || file.name;
+                    file.path = details.ServerRelativeUrl || file.path;
+                    file.size = parseInt(details.Length || 0, 10);
+                    file.modified = details.TimeLastModified || "";
+                    file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
+                }
+            }
+        } catch (e) {
+            console.warn("Could not load current file details:", e);
+        }
+
+        currentPageFile = file;
+        renderCurrentPageFile();
+    }
+
     // ============================================
     // Search Handler
     // ============================================
@@ -1022,14 +1083,10 @@
         showStatus("success", '✅ Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"');
 
         files.forEach(function (file) {
-            const origin = CONFIG.siteUrl.split("/sites/")[0];
-            const parentFolderPath = file.path.replace("/" + file.name, "");
-            // Show folder path without "Shared Documents" prefix and without filename
-            const displayPath = parentFolderPath.replace(CONFIG.folderPath, "").replace(/^\//, "") || "/";
-
-            const viewFileUrl = getViewFileUrl(origin, file.path, file.name);
-            const folderUrl = origin + "/sites/msteams_268a65/Shared Documents/Forms/AllItems.aspx?id=" +
-                encodeURIComponent(parentFolderPath);
+            const origin = getOriginFromServerRelativePath(file.path) || CONFIG.siteUrl.split("/sites/")[0];
+            const displayPath = getDisplayFolderPath(file.path, file.name);
+            const viewFileUrl = getViewFileUrl(origin, file.path);
+            const folderUrl = getFolderUrl(file.path);
 
             const item = document.createElement("div");
             item.className = "sp-file-item";
@@ -1091,6 +1148,10 @@
                 showStatus("success", '✅ Checked in "' + escapeHtml(file.name) + '"');
             }
             saveFileDataOnly();
+            if (currentPageFile && currentPageFile.path === file.path) {
+                currentPageFile.isCheckedOut = file.isCheckedOut;
+                renderCurrentPageFile();
+            }
         } catch (error) {
             buttonEl.textContent = originalLabel;
             buttonEl.title = file.isCheckedOut ? "Check in file" : "Check out file";
@@ -1163,6 +1224,21 @@
         }
     }
 
+    function renderCurrentPageFile() {
+        if (!currentFileEl) {
+            return;
+        }
+        if (!currentPageFile) {
+            currentFileEl.classList.add("sp-hidden");
+            return;
+        }
+
+        currentFileNameEl.textContent = currentPageFile.name;
+        currentFileCheckoutBtn.textContent = getCheckoutActionIcon(currentPageFile.isCheckedOut);
+        currentFileCheckoutBtn.title = currentPageFile.isCheckedOut ? "Check in file" : "Check out file";
+        currentFileEl.classList.remove("sp-hidden");
+    }
+
     // ============================================
     // Filter Helpers
     // ============================================
@@ -1189,7 +1265,7 @@
     // ============================================
     // URL Helpers
     // ============================================
-    function getViewFileUrl(origin, serverRelativePath, fileName) {
+    function getViewFileUrl(origin, serverRelativePath) {
         return origin + serverRelativePath + "?web=1";
     }
 
@@ -1232,6 +1308,103 @@
         const value = parseInt(checkOutType, 10);
         if (Number.isNaN(value)) return false;
         return value !== 2;
+    }
+
+    function getCurrentPageFileCandidate() {
+        const currentUrl = new URL(window.location.href);
+        const rawIdPath = currentUrl.searchParams.get("id");
+        const rawFileName = currentUrl.searchParams.get("file");
+        const rawSourceDoc = currentUrl.searchParams.get("sourcedoc");
+        const serverRelativePath = decodeURIComponent(rawIdPath || "");
+        const fileName = decodeSharePointFileName(rawFileName) || (serverRelativePath.split("/").pop() || "");
+        const sourceDocId = normalizeSourceDocId(rawSourceDoc);
+        const siteUrl = getCurrentPageSiteUrl(currentUrl, serverRelativePath);
+        if (!fileName || !isCurrentFileTypeSupported(fileName)) {
+            return null;
+        }
+        return {
+            name: fileName,
+            path: serverRelativePath,
+            size: 0,
+            modified: "",
+            isCheckedOut: false,
+            sourceDocId,
+            siteUrl
+        };
+    }
+
+    function isCurrentFileTypeSupported(fileName) {
+        const ext = String(fileName || "").split(".").pop().toLowerCase();
+        return CURRENT_FILE_EXTENSIONS.has(ext);
+    }
+
+    function getOriginFromServerRelativePath(serverRelativePath) {
+        if (!serverRelativePath || !serverRelativePath.startsWith("/")) return "";
+        return window.location.origin;
+    }
+
+    function getSiteUrlFromServerRelativePath(serverRelativePath) {
+        if (!serverRelativePath) return "";
+        const segments = String(serverRelativePath).split("/").filter(Boolean);
+        if (segments.length < 2) return "";
+        return window.location.origin + "/" + segments[0] + "/" + segments[1];
+    }
+
+    function getFolderPath(serverRelativePath, fileName) {
+        return String(serverRelativePath || "").replace("/" + (fileName || ""), "");
+    }
+
+    function getDisplayFolderPath(serverRelativePath, fileName) {
+        const parentFolderPath = getFolderPath(serverRelativePath, fileName);
+        return parentFolderPath.replace(CONFIG.folderPath, "").replace(/^\//, "") || "/";
+    }
+
+    function getFolderUrl(serverRelativePath) {
+        const parentFolderPath = getFolderPath(serverRelativePath, String(serverRelativePath || "").split("/").pop() || "");
+        return window.location.origin + CONFIG.folderPath + "/Forms/AllItems.aspx?id=" + encodeURIComponent(parentFolderPath);
+    }
+
+    function getCurrentPageFileDetailsUrl(file) {
+        const select = "?$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType";
+        if (file.sourceDocId && file.siteUrl) {
+            return file.siteUrl + "/_api/web/GetFileById(guid'" + encodeODataString(file.sourceDocId) + "')" + select;
+        }
+        if (file.path) {
+            const siteUrl = file.siteUrl || getSiteUrlFromServerRelativePath(file.path);
+            if (!siteUrl) return "";
+            return siteUrl + "/_api/web/getfilebyserverrelativeurl('" + encodeSharePointPath(file.path) + "')" + select;
+        }
+        return "";
+    }
+
+    function decodeSharePointFileName(rawFileName) {
+        if (!rawFileName) return "";
+        let value = rawFileName;
+        try {
+            value = decodeURIComponent(rawFileName);
+        } catch (e) {
+            value = rawFileName;
+        }
+        return value.replace(/%u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    }
+
+    function normalizeSourceDocId(rawSourceDoc) {
+        if (!rawSourceDoc) return "";
+        let value = rawSourceDoc;
+        try {
+            value = decodeURIComponent(rawSourceDoc);
+        } catch (e) {
+            value = rawSourceDoc;
+        }
+        return value.replace(/[{}]/g, "");
+    }
+
+    function getCurrentPageSiteUrl(currentUrl, serverRelativePath) {
+        const fromPath = getSiteUrlFromServerRelativePath(serverRelativePath);
+        if (fromPath) return fromPath;
+        const match = currentUrl.pathname.match(/\/(sites|teams)\/[^/]+/);
+        if (!match) return "";
+        return currentUrl.origin + match[0];
     }
 
     function getFileIcon(filename) {

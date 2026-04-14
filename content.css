@@ -46,6 +46,35 @@
 }
 .sp-search-close:hover { background: #eee; color: #333; }
 
+.sp-current-file {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    border-bottom: 1px solid #ececec;
+    background: linear-gradient(180deg, #fcfcfc 0%, #f4f8fb 100%);
+}
+.sp-current-file-info {
+    flex: 1;
+    min-width: 0;
+}
+.sp-current-file-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6c7a89;
+}
+.sp-current-file-name {
+    margin-top: 3px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2a36;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Tab Bar */
 .sp-tab-bar {
     display: flex;
