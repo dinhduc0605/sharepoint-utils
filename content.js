@@ -117,8 +117,6 @@
             <div class="sp-footer" style="display:flex;">
                 <span id="sp-connection-status">⏳ Checking connection...</span>
                 <span id="sp-sync-status" style="margin-left:auto;color:#888;font-size:12px;"></span>
-                <span class="sp-footer-sync-result" id="sp-footer-sync-result"></span>
-                <button class="sp-footer-sync-btn" id="sp-footer-sync-btn" title="Run auto-sync now">🔄 Sync</button>
             </div>
         </div>
         <div class="sp-inline-modal-backdrop sp-hidden" id="sp-inline-modal-backdrop">
@@ -153,8 +151,6 @@
     const closeBtn = document.getElementById("sp-close-btn");
     const connectionEl = document.getElementById("sp-connection-status");
     const syncStatusEl = document.getElementById("sp-sync-status");
-    const footerSyncResultEl = document.getElementById("sp-footer-sync-result");
-    const footerSyncBtn = document.getElementById("sp-footer-sync-btn");
     const settingsStatusEl = document.getElementById("sp-settings-status");
     const inlineModalBackdrop = document.getElementById("sp-inline-modal-backdrop");
     const inlineModal = document.getElementById("sp-inline-modal");
@@ -211,7 +207,6 @@
     // Events
     // ============================================
     closeBtn.addEventListener("click", closeModal);
-    footerSyncBtn.addEventListener("click", runAutoSyncNow);
     backdrop.addEventListener("click", (e) => {
         if (e.target === backdrop) closeModal();
     });
@@ -814,63 +809,6 @@
         } catch (e) {
             connectionEl.textContent = "⚠ Could not check connection";
             connectionEl.style.color = "#ff9800";
-        }
-    }
-
-    async function runAutoSyncNow() {
-        if (footerSyncBtn.disabled) return;
-
-        footerSyncBtn.disabled = true;
-        footerSyncBtn.textContent = "⏳ Syncing...";
-        setFooterSyncResult("loading", "Running...");
-        showSettingsStatus("loading", "Running auto-sync logic...");
-
-        try {
-            const response = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage({ action: "runAutoRefresh" }, (result) => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                        return;
-                    }
-                    resolve(result);
-                });
-            });
-
-            if (!response || !response.success) {
-                throw new Error(response?.error || "Auto-sync request failed");
-            }
-
-            const data = response.data || {};
-            if (data.skipped) {
-                const message = "Skipped: " + describeAutoSyncSkipReason(data.reason);
-                showSettingsStatus("error", "ℹ️ Auto-sync skipped: " + describeAutoSyncSkipReason(data.reason));
-                setFooterSyncResult("error", message);
-            } else {
-                const message = "Success: " + (data.updatedCount || 0) + " updated";
-                showSettingsStatus("success", "🔄 Auto-sync ran (" + (data.updatedCount || 0) + " updated)");
-                setFooterSyncResult("success", message);
-            }
-        } catch (e) {
-            showSettingsStatus("error", "❌ Auto-sync failed: " + e.message);
-            setFooterSyncResult("error", "Failed: " + e.message);
-        } finally {
-            footerSyncBtn.disabled = false;
-            footerSyncBtn.textContent = "🔄 Sync";
-        }
-    }
-
-    function describeAutoSyncSkipReason(reason) {
-        if (reason === "missing_setup") return "missing config, cached data, or last sync time";
-        if (reason === "no_checked_paths") return "no checked subfolders";
-        return reason || "unknown reason";
-    }
-
-    function setFooterSyncResult(type, message) {
-        if (!footerSyncResultEl) return;
-        footerSyncResultEl.textContent = message || "";
-        footerSyncResultEl.className = "sp-footer-sync-result";
-        if (type) {
-            footerSyncResultEl.classList.add("sp-footer-sync-result-" + type);
         }
     }
 

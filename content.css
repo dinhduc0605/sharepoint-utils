@@ -255,27 +255,6 @@
     padding: 8px 20px; text-align: center;
     border-top: 1px solid #f0f0f0; font-size: 11px; color: #999;
 }
-.sp-footer-sync-btn {
-    margin-left: 10px;
-    padding: 4px 10px;
-    border: 1px solid #d0d0d0;
-    border-radius: 999px;
-    background: #fff;
-    color: #555;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-}
-.sp-footer-sync-btn:hover { background: #f5f5f5; color: #222; }
-.sp-footer-sync-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.sp-footer-sync-result {
-    margin-left: 10px;
-    font-size: 11px;
-    white-space: nowrap;
-}
-.sp-footer-sync-result-loading { color: #0078d4; }
-.sp-footer-sync-result-success { color: #107c10; }
-.sp-footer-sync-result-error { color: #d13438; }
 
 .sp-inline-modal-backdrop {
     position: absolute;
