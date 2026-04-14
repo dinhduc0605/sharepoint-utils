@@ -52,6 +52,7 @@
                     <div class="sp-current-file-name" id="sp-current-file-name"></div>
                 </div>
                 <div class="sp-file-actions">
+                    <button class="sp-action-btn sp-action-desktop" id="sp-current-file-desktop-btn" title="Open in desktop app">🖥️</button>
                     <button class="sp-action-btn sp-action-checkout" id="sp-current-file-checkout-btn" title="Check out file">📝</button>
                     <button class="sp-action-btn sp-action-folder" id="sp-current-file-folder-btn" title="Open folder">📂</button>
                 </div>
@@ -167,6 +168,7 @@
     const settingsStatusEl = document.getElementById("sp-settings-status");
     const currentFileEl = document.getElementById("sp-current-file");
     const currentFileNameEl = document.getElementById("sp-current-file-name");
+    const currentFileDesktopBtn = document.getElementById("sp-current-file-desktop-btn");
     const currentFileCheckoutBtn = document.getElementById("sp-current-file-checkout-btn");
     const currentFileFolderBtn = document.getElementById("sp-current-file-folder-btn");
     const inlineModalBackdrop = document.getElementById("sp-inline-modal-backdrop");
@@ -250,6 +252,11 @@
         if (!currentPageFile) return;
         await toggleFileCheckout(currentPageFile, currentFileCheckoutBtn);
         renderCurrentPageFile();
+    });
+    currentFileDesktopBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!currentPageFile) return;
+        openFileInDesktopApp(currentPageFile);
     });
     currentFileFolderBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1102,9 +1109,18 @@
                 (file.size ? '<div class="sp-file-size">' + formatFileSize(file.size) + '</div>' : '') +
                 '</div>' +
                 '<div class="sp-file-actions">' +
+                (canOpenInDesktopApp(file) ? '<button class="sp-action-btn sp-action-desktop" title="Open in desktop app">🖥️</button>' : '') +
                 '<button class="sp-action-btn sp-action-checkout" title="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '">' + getCheckoutActionIcon(file.isCheckedOut) + '</button>' +
                 '<button class="sp-action-btn sp-action-folder" title="Open folder">📂</button>' +
                 '</div>';
+
+            const desktopBtn = item.querySelector(".sp-action-desktop");
+            if (desktopBtn) {
+                desktopBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    openFileInDesktopApp(file);
+                });
+            }
 
             item.querySelector(".sp-action-checkout").addEventListener("click", async (e) => {
                 e.stopPropagation();
@@ -1234,6 +1250,7 @@
         }
 
         currentFileNameEl.textContent = currentPageFile.name;
+        currentFileDesktopBtn.classList.toggle("sp-hidden", !canOpenInDesktopApp(currentPageFile));
         currentFileCheckoutBtn.textContent = getCheckoutActionIcon(currentPageFile.isCheckedOut);
         currentFileCheckoutBtn.title = currentPageFile.isCheckedOut ? "Check in file" : "Check out file";
         currentFileEl.classList.remove("sp-hidden");
@@ -1405,6 +1422,39 @@
         const match = currentUrl.pathname.match(/\/(sites|teams)\/[^/]+/);
         if (!match) return "";
         return currentUrl.origin + match[0];
+    }
+
+    function canOpenInDesktopApp(file) {
+        return !!getDesktopOpenUrl(file);
+    }
+
+    function openFileInDesktopApp(file) {
+        const desktopUrl = getDesktopOpenUrl(file);
+        if (!desktopUrl) {
+            showStatus("error", "❌ Desktop open is only available for Word and Excel files");
+            return;
+        }
+        window.location.href = desktopUrl;
+    }
+
+    function getDesktopOpenUrl(file) {
+        const protocol = getOfficeDesktopProtocol(file && file.name);
+        const webUrl = getRawFileUrl(file);
+        if (!protocol || !webUrl) return "";
+        return protocol + encodeURIComponent(webUrl);
+    }
+
+    function getOfficeDesktopProtocol(fileName) {
+        const ext = String(fileName || "").split(".").pop().toLowerCase();
+        if (ext === "doc" || ext === "docx") return "ms-word:ofe|u|";
+        if (ext === "xls" || ext === "xlsx" || ext === "xlsm" || ext === "xlsb") return "ms-excel:ofe|u|";
+        return "";
+    }
+
+    function getRawFileUrl(file) {
+        if (!file || !file.path) return "";
+        const origin = getOriginFromServerRelativePath(file.path) || window.location.origin;
+        return origin + file.path;
     }
 
     function getFileIcon(filename) {
