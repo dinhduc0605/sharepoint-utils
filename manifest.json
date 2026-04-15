@@ -8,8 +8,7 @@
         "activeTab",
         "scripting",
         "storage",
-        "tabs",
-        "alarms"
+        "tabs"
     ],
     "host_permissions": [
         "https://dxcportal.sharepoint.com/*",

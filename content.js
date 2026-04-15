@@ -20,13 +20,11 @@
     const BATCH_SIZE = 3;
     const DELAY_MS = 300;
     const MIN_QUERY_LENGTH = 3;
-    const DEBOUNCE_MS = 300;
     const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb"]);
 
     // searchPaths: array of { path: string, checked: boolean }
     let searchPaths = [];
     const fileData = new Map();
-    let debounceTimer = null;
     let isLoading = false;
     let lastSearchResults = []; // store last search results for re-filtering
     let lastQuery = "";
@@ -130,7 +128,6 @@
 
             <div class="sp-footer" style="display:flex;">
                 <span id="sp-connection-status">⏳ Checking connection...</span>
-                <span id="sp-sync-status" style="margin-left:auto;color:#888;font-size:12px;"></span>
             </div>
         </div>
         <div class="sp-inline-modal-backdrop sp-hidden" id="sp-inline-modal-backdrop">
@@ -164,7 +161,6 @@
     const resultsEl = document.getElementById("sp-results");
     const closeBtn = document.getElementById("sp-close-btn");
     const connectionEl = document.getElementById("sp-connection-status");
-    const syncStatusEl = document.getElementById("sp-sync-status");
     const settingsStatusEl = document.getElementById("sp-settings-status");
     const currentFileEl = document.getElementById("sp-current-file");
     const currentFileNameEl = document.getElementById("sp-current-file-name");
@@ -184,21 +180,6 @@
     let activeRefreshController = null;
     let activeInlineModal = null;
 
-    function updateSyncStatusLabel(timeStr, changesCount) {
-        if (!syncStatusEl) return;
-        if (!timeStr) {
-            syncStatusEl.textContent = "";
-            return;
-        }
-        const displayTime = new Date(timeStr).toLocaleTimeString();
-        let text = `Auto-synced: ${displayTime}`;
-        if (changesCount !== undefined && changesCount > 0) {
-             text += ` (${changesCount} changes)`;
-        } else if (changesCount === 0) {
-             text += ` (0 changes)`;
-        }
-        syncStatusEl.textContent = text;
-    }
     const filterSelect = document.getElementById("sp-filter-select");
     const exportBtn = document.getElementById("sp-export-btn");
     const importBtn = document.getElementById("sp-import-btn");
@@ -264,18 +245,21 @@
         window.open(getFolderUrl(currentPageFile.path), "_blank");
     });
 
-    // Search input - live search with debounce
+    // Search input - press Enter to search
     searchInput.addEventListener("input", () => {
         const val = searchInput.value;
         clearBtn.classList.toggle("sp-visible", val.length > 0);
-        clearTimeout(debounceTimer);
-        if (val.trim().length >= MIN_QUERY_LENGTH) {
-            debounceTimer = setTimeout(() => handleSearch(), DEBOUNCE_MS);
-        } else if (val.trim().length === 0) {
+        if (val.trim().length === 0) {
             resultsEl.innerHTML = "";
             showStatus("", "");
             lastSearchResults = [];
             lastQuery = "";
+        }
+    });
+
+    searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            handleSearch();
         }
     });
 
@@ -743,15 +727,9 @@
         chrome.storage.local.set({ fileData: buildFileDataObject() });
     }
 
-    function saveData(changesCount = 0) {
+    function saveData() {
         const dataObj = buildFileDataObject();
-        const timeNow = new Date().toISOString();
-        chrome.storage.local.set({ 
-            fileData: dataObj,
-            lastSyncTime: timeNow,
-            lastSyncChanges: changesCount
-        });
-        updateSyncStatusLabel(timeNow, changesCount);
+        chrome.storage.local.set({ fileData: dataObj });
     }
 
     // ============================================
@@ -768,35 +746,13 @@
                 
                 // Re-render path list to update file counts
                 renderPathList();
-
-                // If user is actively searching, re-run search to show new files
-                if (searchInput.value.trim().length >= MIN_QUERY_LENGTH) {
-                    clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(() => handleSearch(), 300);
-                }
-            }
-        }
-        if (namespace === "local" && changes.lastSyncTime) {
-            const time = changes.lastSyncTime.newValue;
-            // if changes object contains lastSyncChanges, use it. Otherwise, assume 0 for manual sync
-            const changesCount = changes.lastSyncChanges ? changes.lastSyncChanges.newValue : 0;
-            
-            updateSyncStatusLabel(time, changesCount);
-
-            if (settingsStatusEl) {
-                showSettingsStatus("success", `🔄 Auto-synced at ${new Date(time).toLocaleTimeString()} (${changesCount} updated)`);
-                setTimeout(() => showSettingsStatus("", ""), 4000);
             }
         }
     });
 
     async function restoreState() {
         try {
-            const data = await chrome.storage.local.get(["searchPaths", "fileData", "configUrl", "lastSyncTime", "lastSyncChanges"]);
-            
-            if (data.lastSyncTime) {
-                updateSyncStatusLabel(data.lastSyncTime, data.lastSyncChanges);
-            }
+            const data = await chrome.storage.local.get(["searchPaths", "fileData", "configUrl"]);
             
             if (data.configUrl) {
                 parseAndApplyConfigUrl(data.configUrl, false);
@@ -892,22 +848,12 @@
 
         try {
             isLoading = true;
-            showStatus("loading", "Loading cached file list...");
-            const allFiles = getAllCachedFiles();
-
-            if (allFiles.length === 0) {
-                showStatus("error", "ℹ️ No cached files found. Use Re-fetch in Settings first.");
-                lastSearchResults = [];
-                lastQuery = query;
-                resultsEl.innerHTML = "";
-                return;
-            }
+            showStatus("loading", 'Searching SharePoint for "' + escapeHtml(query) + '"...');
+            const matched = await searchFilesByName(query);
 
             const currentQuery = searchInput.value.trim();
             if (currentQuery.length < MIN_QUERY_LENGTH) { showStatus("", ""); return; }
 
-            const queryLower = currentQuery.toLowerCase();
-            const matched = allFiles.filter(f => f.name.toLowerCase().includes(queryLower));
             lastSearchResults = matched;
             lastQuery = currentQuery;
             displayResults(applyFilter(matched), currentQuery);
@@ -923,6 +869,119 @@
         } finally {
             isLoading = false;
         }
+    }
+
+    async function searchFilesByName(query) {
+        const searchTerms = normalizeSearchInput(query)
+            .split(/\s+/)
+            .map(sanitizeSearchTerm)
+            .filter(Boolean);
+
+        if (searchTerms.length === 0) {
+            return [];
+        }
+
+        const pathClauses = getSearchQueryPaths().map(function (pathUrl) {
+            return 'path:"' + pathUrl + '"';
+        });
+        const propertyClauses = searchTerms.map(function (term) {
+            return "(" +
+                "Title:" + term +
+                " OR Title:" + term + "*" +
+                " OR Filename:" + term +
+                " OR Filename:" + term + "*" +
+                " OR FileLeafRef:" + term +
+                " OR FileLeafRef:" + term + "*" +
+                ")";
+        });
+
+        const queryParts = [];
+        queryParts.push(propertyClauses.join(" AND "));
+        queryParts.push("IsDocument:True");
+        if (pathClauses.length > 0) {
+            queryParts.push(pathClauses.length === 1 ? pathClauses[0] : "(" + pathClauses.join(" OR ") + ")");
+        }
+
+        const rows = await fetchSearchRows(queryParts.join(" "));
+        const uniqueFiles = new Map();
+
+        rows.forEach(function (row) {
+            const cells = row.Cells?.results || [];
+            const getVal = function (key) {
+                const cell = cells.find(function (item) { return item.Key === key; });
+                return cell ? cell.Value : "";
+            };
+
+            const absolutePath = getVal("Path");
+            if (!absolutePath) return;
+
+            let relativePath = "";
+            try {
+                relativePath = decodeURIComponent(new URL(absolutePath).pathname);
+            } catch (e) {
+                return;
+            }
+
+            if (!matchesConfiguredPath(relativePath)) {
+                return;
+            }
+
+            const name = getVal("Filename") || getVal("FileLeafRef") || getVal("Title") || relativePath.split("/").pop() || "";
+            const searchableText = [
+                getVal("Filename"),
+                getVal("FileLeafRef"),
+                getVal("Title"),
+                relativePath
+            ].join(" ");
+
+            if (!matchesAllSearchTerms(searchableText, searchTerms)) {
+                return;
+            }
+
+            const cachedFile = getCachedFileByPath(relativePath);
+            const fileKey = relativePath.toLowerCase();
+            if (uniqueFiles.has(fileKey)) {
+                return;
+            }
+
+            uniqueFiles.set(fileKey, {
+                name,
+                path: relativePath,
+                size: parseInt(getVal("Size") || cachedFile?.size || "0", 10),
+                modified: getVal("LastModifiedTime") || cachedFile?.modified || "",
+                isCheckedOut: cachedFile ? cachedFile.isCheckedOut : false
+            });
+        });
+
+        return Array.from(uniqueFiles.values());
+    }
+
+    async function fetchSearchRows(queryText) {
+        const rows = [];
+        const rowLimit = 500;
+        const maxRows = 500;
+
+        for (let startRow = 0; startRow < maxRows; startRow += rowLimit) {
+            const searchUrl = CONFIG.siteUrl +
+                "/_api/search/query?querytext='" + encodeURIComponent(queryText) +
+                "'&startrow=" + startRow +
+                "&rowlimit=" + rowLimit +
+                "&selectproperties='Title,Path,Filename,FileLeafRef,LastModifiedTime,Size,EditorOWSUSER,ContentClass,FileExtension,IsDocument,IsContainer'" +
+                "&sortlist='IsContainer:descending,Rank:descending'";
+
+            const searchData = await bgFetch(searchUrl, {
+                method: "GET",
+                headers: { "Accept": "application/json;odata=verbose" }
+            });
+
+            const pageRows = searchData?.d?.query?.PrimaryQueryResult?.RelevantResults?.Table?.Rows?.results || [];
+            rows.push(...pageRows);
+            if (pageRows.length < rowLimit) {
+                break;
+            }
+        }
+
+        return rows;
     }
 
     // ============================================
@@ -956,10 +1015,8 @@
         }
     }
 
-    // ALL paths - used for search (ignores checkbox)
-    function getSearchRoots() {
-        if (searchPaths.length === 0) return [CONFIG.folderPath];
-        return searchPaths.map(p => CONFIG.folderPath + p.path);
+    function getSearchQueryPaths() {
+        return [CONFIG.fullUrl];
     }
 
     // Only CHECKED paths - used for refresh
@@ -987,14 +1044,18 @@
         return allFiles;
     }
 
-    function getAllCachedFiles() {
-        const allFiles = [];
-        fileData.forEach(entry => {
-            if (entry && Array.isArray(entry.files)) {
-                allFiles.push(...entry.files);
-            }
-        });
-        return allFiles;
+    function getCachedFileByPath(serverRelativePath) {
+        const lookupPath = String(serverRelativePath || "").toLowerCase();
+        if (!lookupPath) return null;
+
+        for (const entry of fileData.values()) {
+            const match = (entry.files || []).find(function (file) {
+                return String(file.path || "").toLowerCase() === lookupPath;
+            });
+            if (match) return match;
+        }
+
+        return null;
     }
 
     async function loadFilesFromFolder(rootPath, controller) {
@@ -1090,9 +1151,8 @@
         showStatus("success", '✅ Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"');
 
         files.forEach(function (file) {
-            const origin = getOriginFromServerRelativePath(file.path) || CONFIG.siteUrl.split("/sites/")[0];
             const displayPath = getDisplayFolderPath(file.path, file.name);
-            const viewFileUrl = getViewFileUrl(origin, file.path);
+            const viewFileUrl = getViewFileUrl(file.path);
             const folderUrl = getFolderUrl(file.path);
 
             const item = document.createElement("div");
@@ -1263,7 +1323,7 @@
         const filterValue = filterSelect.value;
         if (!filterValue) return files; // "All folders"
         const filterRoot = CONFIG.folderPath + filterValue;
-        return files.filter(f => f.path.startsWith(filterRoot));
+        return files.filter(f => f.path === filterRoot || f.path.startsWith(filterRoot + "/"));
     }
 
     function updateFilterOptions() {
@@ -1282,8 +1342,8 @@
     // ============================================
     // URL Helpers
     // ============================================
-    function getViewFileUrl(origin, serverRelativePath) {
-        return origin + serverRelativePath + "?web=1";
+    function getViewFileUrl(serverRelativePath) {
+        return getFileWebUrl(serverRelativePath) + "?web=1";
     }
 
     // ============================================
@@ -1307,6 +1367,28 @@
             : message;
         if (!message) settingsStatusEl.classList.add("sp-hidden");
         else settingsStatusEl.classList.remove("sp-hidden");
+    }
+
+    function normalizeSearchInput(value) {
+        return String(value || "")
+            .replace(/[()（）{}[\]【】「」『』.·。_\-]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function sanitizeSearchTerm(term) {
+        return term.replace(/["'*]/g, "").trim();
+    }
+
+    function matchesAllSearchTerms(text, searchTerms) {
+        const value = String(text || "").toLowerCase();
+        return searchTerms.every(function (term) {
+            return value.includes(term.toLowerCase());
+        });
+    }
+
+    function matchesConfiguredPath(serverRelativePath) {
+        return serverRelativePath.startsWith(CONFIG.folderPath + "/");
     }
 
     function encodeSharePointPath(path) {
@@ -1355,11 +1437,6 @@
         return CURRENT_FILE_EXTENSIONS.has(ext);
     }
 
-    function getOriginFromServerRelativePath(serverRelativePath) {
-        if (!serverRelativePath || !serverRelativePath.startsWith("/")) return "";
-        return window.location.origin;
-    }
-
     function getSiteUrlFromServerRelativePath(serverRelativePath) {
         if (!serverRelativePath) return "";
         const segments = String(serverRelativePath).split("/").filter(Boolean);
@@ -1378,7 +1455,7 @@
 
     function getFolderUrl(serverRelativePath) {
         const parentFolderPath = getFolderPath(serverRelativePath, String(serverRelativePath || "").split("/").pop() || "");
-        return window.location.origin + CONFIG.folderPath + "/Forms/AllItems.aspx?id=" + encodeURIComponent(parentFolderPath);
+        return getLibraryRootUrl() + "/Forms/AllItems.aspx?id=" + encodeURIComponent(parentFolderPath);
     }
 
     function getCurrentPageFileDetailsUrl(file) {
@@ -1441,7 +1518,7 @@
         const protocol = getOfficeDesktopProtocol(file && file.name);
         const webUrl = getRawFileUrl(file);
         if (!protocol || !webUrl) return "";
-        return protocol + encodeURIComponent(webUrl);
+        return protocol + encodeURI(webUrl);
     }
 
     function getOfficeDesktopProtocol(fileName) {
@@ -1453,8 +1530,28 @@
 
     function getRawFileUrl(file) {
         if (!file || !file.path) return "";
-        const origin = getOriginFromServerRelativePath(file.path) || window.location.origin;
-        return origin + file.path;
+        return getFileWebUrl(file.path);
+    }
+
+    function getFileWebUrl(serverRelativePath) {
+        const path = String(serverRelativePath || "");
+        if (!path) return "";
+
+        const libraryRootUrl = getLibraryRootUrl();
+        if (libraryRootUrl && path.startsWith(CONFIG.folderPath)) {
+            const relativePath = path.slice(CONFIG.folderPath.length);
+            return libraryRootUrl + relativePath;
+        }
+
+        try {
+            return new URL(CONFIG.fullUrl).origin + path;
+        } catch (e) {
+            return path;
+        }
+    }
+
+    function getLibraryRootUrl() {
+        return String(CONFIG.fullUrl || "").replace(/\/+$/, "");
     }
 
     function getFileIcon(filename) {
