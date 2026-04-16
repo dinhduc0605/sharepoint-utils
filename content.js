@@ -11,20 +11,15 @@
     // ============================================
     // CONFIG
     // ============================================
-    let CONFIG = {
-        siteUrl: "https://dxcportal.sharepoint.com/sites/msteams_268a65",
-        folderPath: "/sites/msteams_268a65/Shared Documents",
-        fullUrl: "https://dxcportal.sharepoint.com/sites/msteams_268a65/Shared Documents"
-    };
+    const TENANT_ORIGIN = "https://dxcportal.sharepoint.com";
+    const DEFAULT_SITE = "msteams_268a65";
 
-    const BATCH_SIZE = 3;
-    const DELAY_MS = 300;
     const MIN_QUERY_LENGTH = 3;
     const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb"]);
 
-    // searchPaths: array of { path: string, checked: boolean }
-    let searchPaths = [];
-    const fileData = new Map();
+    // siteConfigs: array of { site: string, folders: string[] }
+    let siteConfigs = [];
+    let defaultSite = "";
     let isLoading = false;
     let lastSearchResults = []; // store last search results for re-filtering
     let lastQuery = "";
@@ -71,7 +66,12 @@
                             <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename..." autocomplete="off">
                             <button class="sp-clear-btn" id="sp-clear-btn" title="Clear">✕</button>
                         </div>
-                        <select class="sp-filter-select" id="sp-filter-select" title="Filter by subfolder">
+                    </div>
+                    <div class="sp-search-filters-row">
+                        <select class="sp-filter-select" id="sp-site-filter-select" title="Filter by site">
+                            <option value="">All sites</option>
+                        </select>
+                        <select class="sp-filter-select" id="sp-folder-filter-select" title="Filter by subfolder">
                             <option value="">All folders</option>
                         </select>
                     </div>
@@ -84,23 +84,21 @@
             <!-- Settings Tab -->
             <div class="sp-tab-panel" id="sp-tab-settings">
                 <div class="sp-settings-content">
-                    <div class="sp-import-export-section">
-                        <div class="sp-settings-label">Import / Export</div>
-                        <div class="sp-ie-row">
-                            <button class="sp-ie-btn sp-export-btn" id="sp-export-btn">📤 Export CSV</button>
-                            <button class="sp-ie-btn sp-import-btn" id="sp-import-btn">📥 Import CSV</button>
-                            <input type="file" id="sp-import-file" accept=".csv" style="display:none">
+                    <div class="sp-settings-section">
+                        <div class="sp-settings-label">Add Site</div>
+                        <div class="sp-path-add-row">
+                            <input type="text" class="sp-path-input" id="sp-site-input" placeholder="site-name" autocomplete="off">
+                            <button class="sp-add-path-btn" id="sp-add-site-btn">+ Add Site</button>
                         </div>
-                        <div class="sp-refresh-hint">Export/import paths and cached file data</div>
+                        <div class="sp-refresh-hint">Library URL format: ${TENANT_ORIGIN}/sites/{site}/Shared Documents</div>
                     </div>
                     <div class="sp-settings-section">
-                        <div class="sp-settings-label">Target Document Library URL</div>
-                        <div class="sp-path-add-row">
-                            <input type="text" class="sp-path-input" id="sp-config-url-input" placeholder="https://..." autocomplete="off">
-                            <button class="sp-add-path-btn" id="sp-save-config-btn">Save</button>
+                        <div class="sp-settings-label">Sites</div>
+                        <div class="sp-path-list" id="sp-site-list">
+                            <div class="sp-path-list-empty">No sites added yet.</div>
                         </div>
-                        <div class="sp-refresh-hint">Changing this will clear your subfolders and cached data</div>
                     </div>
+                    <div class="sp-refresh-hint" id="sp-selected-library-hint"></div>
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Add Subfolder</div>
                         <div class="sp-path-add-row">
@@ -112,17 +110,10 @@
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Subfolders</div>
                         <div class="sp-path-list" id="sp-path-list">
-                            <div class="sp-path-list-empty">No subfolders added. Search uses cached files only until you add a subfolder or run a manual refresh.</div>
+                            <div class="sp-path-list-empty">No subfolders added yet.</div>
                         </div>
                     </div>
-                    <div class="sp-refresh-section">
-                        <div class="sp-status sp-hidden" id="sp-settings-status"></div>
-                        <div class="sp-refresh-actions">
-                            <button class="sp-refresh-full-btn" id="sp-refresh-btn">🔄 Re-fetch checked folders</button>
-                            <button class="sp-refresh-stop-btn sp-hidden" id="sp-stop-refresh-btn">⏹ Stop</button>
-                        </div>
-                        <div class="sp-refresh-hint">Re-fetch file list from checked subfolders</div>
-                    </div>
+                    <div class="sp-status sp-hidden" id="sp-settings-status"></div>
                 </div>
             </div>
 
@@ -151,8 +142,10 @@
     const modal = document.getElementById("sp-search-modal");
     const searchInput = document.getElementById("sp-search-input");
     const clearBtn = document.getElementById("sp-clear-btn");
-    const refreshBtn = document.getElementById("sp-refresh-btn");
-    const stopRefreshBtn = document.getElementById("sp-stop-refresh-btn");
+    const siteInput = document.getElementById("sp-site-input");
+    const addSiteBtn = document.getElementById("sp-add-site-btn");
+    const siteListEl = document.getElementById("sp-site-list");
+    const selectedLibraryHintEl = document.getElementById("sp-selected-library-hint");
     const pathInput = document.getElementById("sp-path-input");
     const addPathBtn = document.getElementById("sp-add-path-btn");
     const currentPageBtn = document.getElementById("sp-current-page-btn");
@@ -173,19 +166,12 @@
     const inlineModalTextarea = document.getElementById("sp-inline-modal-textarea");
     const inlineModalCancelBtn = document.getElementById("sp-inline-modal-cancel-btn");
     const inlineModalOkBtn = document.getElementById("sp-inline-modal-ok-btn");
-    const DEFAULT_REFRESH_LABEL = "🔄 Re-fetch checked folders";
-    const FETCH_STOPPED_ERROR = "FETCH_STOPPED";
     const CHECKOUT_ICON = "📝";
     const CHECKIN_ICON = "✅";
-    let activeRefreshController = null;
     let activeInlineModal = null;
 
-    const filterSelect = document.getElementById("sp-filter-select");
-    const exportBtn = document.getElementById("sp-export-btn");
-    const importBtn = document.getElementById("sp-import-btn");
-    const importFile = document.getElementById("sp-import-file");
-    const configUrlInput = document.getElementById("sp-config-url-input");
-    const saveConfigBtn = document.getElementById("sp-save-config-btn");
+    const siteFilterSelect = document.getElementById("sp-site-filter-select");
+    const folderFilterSelect = document.getElementById("sp-folder-filter-select");
     const tabBtns = backdrop.querySelectorAll(".sp-tab-btn");
     const tabPanels = backdrop.querySelectorAll(".sp-tab-panel");
 
@@ -273,80 +259,31 @@
         searchInput.focus();
     });
 
-    // Filter dropdown — re-filter existing results instantly
-    filterSelect.addEventListener("change", () => {
+    // Filter dropdowns — re-filter existing results instantly
+    siteFilterSelect.addEventListener("change", () => {
+        updateFolderFilterOptions();
         if (lastSearchResults.length > 0 && lastQuery) {
             displayResults(applyFilter(lastSearchResults), lastQuery);
         }
     });
 
-    // Refresh - only re-fetch checked folders
-    refreshBtn.addEventListener("click", async () => {
-        if (activeRefreshController) return;
-
-        activeRefreshController = { cancelled: false };
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = "⏳ Re-fetching...";
-        stopRefreshBtn.classList.remove("sp-hidden");
-        stopRefreshBtn.disabled = false;
-        try {
-            const files = await loadFilesForChecked(activeRefreshController);
-            showSettingsStatus("", "");
-            refreshBtn.textContent = "✅ Re-fetched! (" + files.length + " files)";
-            setTimeout(() => {
-                resetRefreshControls();
-            }, 2000);
-        } catch (e) {
-            if (e.message === FETCH_STOPPED_ERROR) {
-                showSettingsStatus("error", "⏹ Re-fetch stopped.");
-                refreshBtn.textContent = "⏹ Stopped";
-                setTimeout(() => {
-                    showSettingsStatus("", "");
-                    resetRefreshControls();
-                }, 1500);
-            } else {
-                showSettingsStatus("error", "❌ Failed: " + e.message);
-                refreshBtn.textContent = "❌ Failed";
-                setTimeout(() => {
-                    showSettingsStatus("", "");
-                    resetRefreshControls();
-                }, 3000);
-            }
-        } finally {
-            activeRefreshController = null;
+    folderFilterSelect.addEventListener("change", () => {
+        if (lastSearchResults.length > 0 && lastQuery) {
+            displayResults(applyFilter(lastSearchResults), lastQuery);
         }
     });
 
-    stopRefreshBtn.addEventListener("click", () => {
-        if (!activeRefreshController) return;
-        activeRefreshController.cancelled = true;
-        stopRefreshBtn.disabled = true;
-        stopRefreshBtn.textContent = "⏳ Stopping...";
-        showSettingsStatus("loading", "Stopping after the current request finishes...");
+    // Site management
+    addSiteBtn.addEventListener("click", addSite);
+    siteInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") addSite();
     });
 
-    // Path management
+    // Folder management
     addPathBtn.addEventListener("click", addPath);
     currentPageBtn.addEventListener("click", useCurrentPageUrl);
     pathInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") addPath();
-    });
-
-    // Import / Export
-    exportBtn.addEventListener("click", exportCSV);
-    importBtn.addEventListener("click", () => importFile.click());
-    importFile.addEventListener("change", (e) => {
-        const file = e.target.files[0];
-        if (file) importCSV(file);
-        importFile.value = ""; // reset so same file can be re-imported
-    });
-
-    // Configuration
-    saveConfigBtn.addEventListener("click", () => {
-        const url = configUrlInput.value.trim();
-        if (!url) return;
-        if (!confirm("Changing the Document Library URL will reset your subfolders and cached data. Continue?")) return;
-        parseAndApplyConfigUrl(url, true);
     });
 
     // Focus input & restore state
@@ -364,73 +301,209 @@
     }
 
     // ============================================
-    // Path Management
+    // Site & Path Management
     // ============================================
-    function parseAndApplyConfigUrl(inputUrl, resetData) {
-        try {
-            const url = new URL(inputUrl);
-            const origin = url.origin;
-            const pathname = decodeURIComponent(url.pathname);
-            
-            const segments = pathname.split('/').filter(Boolean);
-            if (segments.length < 2) throw new Error("Invalid URL form");
-            
-            CONFIG.siteUrl = origin + '/' + segments[0] + '/' + segments[1];
-            CONFIG.folderPath = pathname;
-            CONFIG.fullUrl = inputUrl;
+    function normalizeSiteInput(rawInput) {
+        const value = String(rawInput || "").trim();
+        if (!value) return "";
 
-            if (resetData) {
-                searchPaths = [];
-                fileData.clear();
-                savePaths();
-                saveData();
-                chrome.storage.local.set({ configUrl: inputUrl });
-                renderPathList();
-                updateFilterOptions();
-                showSettingsStatus("success", "✅ Configuration saved and data reset.");
-                setTimeout(() => showSettingsStatus("", ""), 3000);
+        if (/^https?:\/\//i.test(value)) {
+            try {
+                const url = new URL(value);
+                const match = decodeURIComponent(url.pathname).match(/^\/sites\/([^/]+)/i);
+                return match ? match[1] : "";
+            } catch (e) {
+                return "";
             }
+        }
+
+        return value
+            .replace(/^\/+/, "")
+            .replace(/^sites\//i, "")
+            .replace(/\/.*$/, "")
+            .trim();
+    }
+
+    function buildSiteUrl(site) {
+        return TENANT_ORIGIN + "/sites/" + site;
+    }
+
+    function buildLibraryPath(site) {
+        return "/sites/" + site + "/Shared Documents";
+    }
+
+    function buildLibraryUrl(site) {
+        return TENANT_ORIGIN + buildLibraryPath(site);
+    }
+
+    function getSiteConfig(site) {
+        return siteConfigs.find(function (item) { return item.site === site; }) || null;
+    }
+
+    function ensureDefaultSite() {
+        if (defaultSite && getSiteConfig(defaultSite)) return;
+        defaultSite = siteConfigs[0]?.site || "";
+    }
+
+    function addSite() {
+        const site = normalizeSiteInput(siteInput.value);
+        if (!site) {
+            showSettingsStatus("error", "❌ Invalid site name.");
+            setTimeout(() => showSettingsStatus("", ""), 3000);
+            return;
+        }
+        if (getSiteConfig(site)) {
+            defaultSite = site;
+            siteInput.value = "";
+            renderSiteList();
+            renderPathList();
+            updateSearchFilterOptions();
+            updateSelectedLibraryHint();
+            return;
+        }
+
+        siteConfigs.push({ site, folders: [] });
+        defaultSite = site;
+        siteInput.value = "";
+        saveSiteConfigs();
+        renderSiteList();
+        renderPathList();
+        updateSearchFilterOptions();
+        updateSelectedLibraryHint();
+    }
+
+    function removeSite(site) {
+        if (!confirm('Remove site "' + site + '" and all of its folders?')) return;
+        siteConfigs = siteConfigs.filter(function (item) { return item.site !== site; });
+        ensureDefaultSite();
+        saveSiteConfigs();
+        renderSiteList();
+        renderPathList();
+        updateSearchFilterOptions();
+        updateSelectedLibraryHint();
+    }
+
+    function setDefaultSite(site) {
+        if (!getSiteConfig(site)) return;
+        defaultSite = site;
+        saveSiteConfigs();
+        renderSiteList();
+        renderPathList();
+        updateSearchFilterOptions();
+        siteFilterSelect.value = site;
+        updateFolderFilterOptions();
+        updateSelectedLibraryHint();
+    }
+
+    function renderSiteList() {
+        siteListEl.innerHTML = "";
+        if (siteConfigs.length === 0) {
+            siteListEl.innerHTML = '<div class="sp-path-list-empty">No sites added yet.</div>';
+            return;
+        }
+
+        siteConfigs.forEach(function (siteConfig) {
+            const row = document.createElement("div");
+            row.className = "sp-path-item" + (siteConfig.site === defaultSite ? " sp-path-item-active" : "");
+            row.innerHTML =
+                '<button class="sp-site-select-btn" title="Select site">' + escapeHtml(siteConfig.site) + '</button>' +
+                '<input type="radio" class="sp-site-default-radio" name="sp-default-site" title="Default site" ' + (siteConfig.site === defaultSite ? "checked" : "") + '>' +
+                '<button class="sp-path-remove" title="Remove site">🗑️</button>';
+
+            row.querySelector(".sp-site-select-btn").addEventListener("click", function () {
+                setDefaultSite(siteConfig.site);
+            });
+
+            row.querySelector(".sp-site-default-radio").addEventListener("change", function () {
+                setDefaultSite(siteConfig.site);
+            });
+
+            row.querySelector(".sp-path-remove").addEventListener("click", function () {
+                removeSite(siteConfig.site);
+            });
+
+            siteListEl.appendChild(row);
+        });
+    }
+
+    function updateSelectedLibraryHint() {
+        if (!defaultSite) {
+            selectedLibraryHintEl.textContent = "Add a site to manage its folders.";
+            return;
+        }
+        selectedLibraryHintEl.textContent = "Default site: " + buildLibraryUrl(defaultSite);
+    }
+
+    function migrateLegacyState(data) {
+        const fallbackSite = parseSiteFromLibraryUrl(data.configUrl) || DEFAULT_SITE;
+        const folders = Array.isArray(data.searchPaths)
+            ? data.searchPaths.map(function (item) {
+                return typeof item === "string" ? item : item?.path;
+            }).filter(Boolean)
+            : [];
+        siteConfigs = [{ site: fallbackSite, folders }];
+        defaultSite = fallbackSite;
+    }
+
+    function parseSiteFromLibraryUrl(inputUrl) {
+        if (!inputUrl) return "";
+        try {
+            const pathname = decodeURIComponent(new URL(inputUrl).pathname);
+            const match = pathname.match(/^\/sites\/([^/]+)\/Shared Documents/i);
+            return match ? match[1] : "";
         } catch (e) {
-            if (resetData) {
-                showSettingsStatus("error", "❌ Invalid SharePoint URL format.");
-                setTimeout(() => showSettingsStatus("", ""), 3000);
-            }
+            return "";
         }
     }
 
     function addPath() {
+        if (!defaultSite) {
+            showSettingsStatus("error", "❌ Add a site first.");
+            setTimeout(() => showSettingsStatus("", ""), 3000);
+            return;
+        }
+
         let path;
         try {
-            path = normalizeSubfolderInput(pathInput.value);
+            path = normalizeSubfolderInput(pathInput.value, defaultSite);
         } catch (e) {
             showSettingsStatus("error", "❌ " + e.message);
             setTimeout(() => showSettingsStatus("", ""), 3000);
             return;
         }
 
+        const siteConfig = getSiteConfig(defaultSite);
+        if (!siteConfig) return;
         if (!path) return;
-        if (searchPaths.some(p => p.path === path)) { pathInput.value = ""; return; }
+        if (siteConfig.folders.includes(path)) { pathInput.value = ""; return; }
 
-        searchPaths.push({ path, checked: true });
+        siteConfig.folders.push(path);
         pathInput.value = "";
+        saveSiteConfigs();
         renderPathList();
-        savePaths();
-        updateFilterOptions();
+        updateSearchFilterOptions();
     }
 
     function useCurrentPageUrl() {
+        if (!defaultSite) {
+            showSettingsStatus("error", "❌ Set a default site first.");
+            setTimeout(() => showSettingsStatus("", ""), 3000);
+            return;
+        }
         pathInput.value = window.location.href;
         pathInput.focus();
     }
 
-    function normalizeSubfolderInput(rawInput) {
+    function normalizeSubfolderInput(rawInput, site) {
         const value = (rawInput || "").trim();
         if (!value) return "";
 
         let path = value;
 
         if (/^https?:\/\//i.test(value)) {
-            path = extractSubfolderFromUrl(value);
+            path = extractSubfolderFromUrl(value, site);
+        } else if (value.startsWith("/sites/")) {
+            path = extractSubfolderFromServerPath(value, site);
         }
 
         if (!path.startsWith("/")) path = "/" + path;
@@ -438,7 +511,24 @@
         return path;
     }
 
-    function extractSubfolderFromUrl(inputUrl) {
+    function extractSubfolderFromServerPath(folderPath, site) {
+        const libraryPath = buildLibraryPath(site);
+        if (!folderPath.startsWith(libraryPath)) {
+            throw new Error("Path is outside the selected site library.");
+        }
+
+        let relativePath = folderPath.slice(libraryPath.length);
+        if (!relativePath) {
+            throw new Error("The path points to the document library root, not a subfolder.");
+        }
+        if (!relativePath.startsWith("/")) {
+            relativePath = "/" + relativePath;
+        }
+
+        return relativePath;
+    }
+
+    function extractSubfolderFromUrl(inputUrl, site) {
         let url;
         try {
             url = new URL(inputUrl);
@@ -449,61 +539,38 @@
         let folderPath = url.searchParams.get("id") || decodeURIComponent(url.pathname);
         folderPath = decodeURIComponent(folderPath);
 
-        if (!folderPath.startsWith(CONFIG.folderPath)) {
-            throw new Error("URL is outside the current document library.");
-        }
-
-        let relativePath = folderPath.slice(CONFIG.folderPath.length);
-        if (!relativePath) {
-            throw new Error("The URL points to the document library root, not a subfolder.");
-        }
-
-        if (!relativePath.startsWith("/")) {
-            relativePath = "/" + relativePath;
-        }
-
-        return relativePath;
+        return extractSubfolderFromServerPath(folderPath, site);
     }
 
     function removePath(path) {
-        if (!confirm('Remove subfolder "' + path + '" and its cached files?')) return;
-        searchPaths = searchPaths.filter(p => p.path !== path);
-        fileData.delete(CONFIG.folderPath + path);
+        const siteConfig = getSiteConfig(defaultSite);
+        if (!siteConfig) return;
+        if (!confirm('Remove subfolder "' + path + '"?')) return;
+        siteConfig.folders = siteConfig.folders.filter(function (item) { return item !== path; });
+        saveSiteConfigs();
         renderPathList();
-        savePaths();
-        saveData();
-        updateFilterOptions();
-    }
-
-    function togglePath(path, checked) {
-        const item = searchPaths.find(p => p.path === path);
-        if (item) item.checked = checked;
-        savePaths();
+        updateSearchFilterOptions();
     }
 
     function renderPathList() {
         pathListEl.innerHTML = "";
-        if (searchPaths.length === 0) {
-            pathListEl.innerHTML = '<div class="sp-path-list-empty">No subfolders added. Search uses cached files only until you add a subfolder or run a manual refresh.</div>';
+        const siteConfig = getSiteConfig(defaultSite);
+        if (!siteConfig) {
+            pathListEl.innerHTML = '<div class="sp-path-list-empty">Set a default site to manage its folders.</div>';
             return;
         }
-        searchPaths.forEach((item, index) => {
-            const cached = fileData.get(CONFIG.folderPath + item.path);
-            const fileCount = cached ? cached.files.length : 0;
-
+        if (siteConfig.folders.length === 0) {
+            pathListEl.innerHTML = '<div class="sp-path-list-empty">No subfolders added for this site yet.</div>';
+            return;
+        }
+        siteConfig.folders.forEach((path) => {
             const row = document.createElement("div");
             row.className = "sp-path-item";
             row.innerHTML =
-                '<input type="checkbox" class="sp-path-checkbox" ' + (item.checked ? 'checked' : '') + '>' +
-                '<span class="sp-path-text">' + escapeHtml(item.path) + '</span>' +
-                '<input type="text" class="sp-path-edit-input" value="' + escapeHtml(item.path) + '" style="display:none">' +
-                (cached ? '<span class="sp-path-file-count">' + fileCount + ' files</span>' : '') +
+                '<span class="sp-path-text">' + escapeHtml(path) + '</span>' +
+                '<input type="text" class="sp-path-edit-input" value="' + escapeHtml(path) + '" style="display:none">' +
                 '<button class="sp-path-edit" title="Edit">✏️</button>' +
                 '<button class="sp-path-remove" title="Remove">🗑️</button>';
-
-            row.querySelector(".sp-path-checkbox").addEventListener("change", (e) => {
-                togglePath(item.path, e.target.checked);
-            });
 
             // Edit functionality
             const textEl = row.querySelector(".sp-path-text");
@@ -520,17 +587,24 @@
                 } else {
                     // Save edit
                     let newPath = editInput.value.trim();
-                    if (!newPath) { editInput.value = item.path; }
+                    if (!newPath) { editInput.value = path; }
                     else {
-                        if (!newPath.startsWith("/")) newPath = "/" + newPath;
-                        if (newPath.length > 1 && newPath.endsWith("/")) newPath = newPath.slice(0, -1);
-                        // Remove old cache
-                        fileData.delete(CONFIG.folderPath + item.path);
-                        item.path = newPath;
-                        savePaths();
-                        saveData();
+                        newPath = normalizeSubfolderInput(newPath, defaultSite);
+                        if (newPath !== path && siteConfig.folders.includes(newPath)) {
+                            showSettingsStatus("error", "❌ Folder already exists for this site.");
+                            setTimeout(() => showSettingsStatus("", ""), 3000);
+                            editInput.value = path;
+                            return;
+                        }
+                        const pathIndex = siteConfig.folders.indexOf(path);
+                        if (pathIndex >= 0) {
+                            siteConfig.folders[pathIndex] = newPath;
+                        }
+                        saveSiteConfigs();
+                        updateSearchFilterOptions();
+                        path = newPath;
                     }
-                    textEl.textContent = item.path;
+                    textEl.textContent = path;
                     textEl.style.display = "";
                     editInput.style.display = "none";
                     editBtn.textContent = "✏️";
@@ -540,243 +614,54 @@
             editInput.addEventListener("keydown", (e) => {
                 if (e.key === "Enter") editBtn.click();
                 if (e.key === "Escape") {
-                    editInput.value = item.path;
+                    editInput.value = path;
                     textEl.style.display = "";
                     editInput.style.display = "none";
                     editBtn.textContent = "✏️";
                 }
             });
 
-            row.querySelector(".sp-path-remove").addEventListener("click", () => removePath(item.path));
+            row.querySelector(".sp-path-remove").addEventListener("click", () => removePath(path));
             pathListEl.appendChild(row);
         });
     }
 
     // ============================================
-    // Import / Export CSV
-    // ============================================
-    function csvEscape(val) {
-        const s = String(val == null ? "" : val);
-        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-            return '"' + s.replace(/"/g, '""') + '"';
-        }
-        return s;
-    }
-
-    function exportCSV() {
-        const rows = [];
-        // Header
-        rows.push("type,path,checked,name,serverRelativeUrl,size,modified,folderKey,isCheckedOut");
-
-        // URL row
-        rows.push([
-            "URL", csvEscape(CONFIG.fullUrl), "",
-            "", "", "", "", ""
-        ].join(","));
-
-        // PATH rows
-        searchPaths.forEach(item => {
-            rows.push([
-                "PATH", csvEscape(item.path), item.checked ? "true" : "false",
-                "", "", "", "", ""
-            ].join(","));
-        });
-
-        // FILE rows
-        fileData.forEach((folderEntry, folderKey) => {
-            (folderEntry.files || []).forEach(file => {
-                rows.push([
-                    "FILE", "", "",
-                    csvEscape(file.name), csvEscape(file.path),
-                    file.size || 0, csvEscape(file.modified),
-                    csvEscape(folderKey), file.isCheckedOut ? "true" : "false"
-                ].join(","));
-            });
-        });
-
-        const csv = rows.join("\n");
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "sp_search_data.csv";
-        a.click();
-        URL.revokeObjectURL(url);
-
-        showSettingsStatus("success", "✅ Exported " + searchPaths.length + " paths & " + countStoredFiles() + " files");
-        setTimeout(() => showSettingsStatus("", ""), 3000);
-    }
-
-    function importCSV(file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const text = e.target.result;
-                const lines = parseCSVLines(text);
-                if (lines.length < 2) throw new Error("Empty or invalid CSV");
-
-                const header = lines[0];
-                const newPaths = [];
-                const newCache = new Map();
-
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i];
-                    if (cols.length < 3) continue;
-                    const type = cols[0];
-
-                    if (type === "URL") {
-                        const importedUrl = cols[1];
-                        if (importedUrl) {
-                            parseAndApplyConfigUrl(importedUrl, false);
-                            configUrlInput.value = importedUrl;
-                            chrome.storage.local.set({ configUrl: importedUrl });
-                        }
-                    } else if (type === "PATH") {
-                        const path = cols[1];
-                        const checked = cols[2] === "true";
-                        if (path) newPaths.push({ path, checked });
-                    } else if (type === "FILE") {
-                        const name = cols[3] || "";
-                        const serverPath = cols[4] || "";
-                        const size = parseInt(cols[5]) || 0;
-                        const modified = cols[6] || "";
-                        const folderKey = cols[7] || "";
-                        const isCheckedOut = cols[8] === "true";
-
-                        if (!folderKey || !name) continue;
-                        if (!newCache.has(folderKey)) {
-                            newCache.set(folderKey, { files: [], time: Date.now() });
-                        }
-                        newCache.get(folderKey).files.push({ name, path: serverPath, size, modified, isCheckedOut });
-                    }
-                }
-
-                // Apply imported data
-                searchPaths = newPaths;
-                fileData.clear();
-                newCache.forEach((v, k) => fileData.set(k, v));
-
-                savePaths();
-                saveData();
-                renderPathList();
-                updateFilterOptions();
-
-                showSettingsStatus("success", "✅ Imported " + newPaths.length + " paths & " + countStoredFiles() + " files");
-                setTimeout(() => showSettingsStatus("", ""), 3000);
-            } catch (err) {
-                showSettingsStatus("error", "❌ Import failed: " + err.message);
-                setTimeout(() => showSettingsStatus("", ""), 5000);
-            }
-        };
-        reader.readAsText(file);
-    }
-
-    // Simple CSV line parser (handles quoted fields)
-    function parseCSVLines(text) {
-        const result = [];
-        const lines = text.split("\n");
-        for (const line of lines) {
-            if (!line.trim()) continue;
-            const cols = [];
-            let current = "";
-            let inQuotes = false;
-            for (let i = 0; i < line.length; i++) {
-                const ch = line[i];
-                if (inQuotes) {
-                    if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
-                    else if (ch === '"') { inQuotes = false; }
-                    else { current += ch; }
-                } else {
-                    if (ch === '"') { inQuotes = true; }
-                    else if (ch === ',') { cols.push(current); current = ""; }
-                    else { current += ch; }
-                }
-            }
-            cols.push(current);
-            result.push(cols);
-        }
-        return result;
-    }
-
-    function countStoredFiles() {
-        let count = 0;
-        fileData.forEach(entry => { count += (entry.files || []).length; });
-        return count;
-    }
-
-    function resetRefreshControls() {
-        refreshBtn.textContent = DEFAULT_REFRESH_LABEL;
-        refreshBtn.disabled = false;
-        stopRefreshBtn.textContent = "⏹ Stop";
-        stopRefreshBtn.disabled = false;
-        stopRefreshBtn.classList.add("sp-hidden");
-    }
-
-    // ============================================
     // Persistent Storage
     // ============================================
-    function savePaths() { chrome.storage.local.set({ searchPaths }); }
-
-    function buildFileDataObject() {
-        const dataObj = {};
-        fileData.forEach((value, key) => { dataObj[key] = value; });
-        return dataObj;
-    }
-
-    function saveFileDataOnly() {
-        chrome.storage.local.set({ fileData: buildFileDataObject() });
-    }
-
-    function saveData() {
-        const dataObj = buildFileDataObject();
-        chrome.storage.local.set({ fileData: dataObj });
-    }
-
-    // ============================================
-    // Listen for Background Updates
-    // ============================================
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === "local" && changes.fileData) {
-            const newData = changes.fileData.newValue;
-            if (newData) {
-                // Update local memory cache
-                for (const [key, value] of Object.entries(newData)) {
-                    fileData.set(key, value);
-                }
-                
-                // Re-render path list to update file counts
-                renderPathList();
-            }
-        }
-    });
+    function saveSiteConfigs() { chrome.storage.local.set({ siteConfigs, defaultSite }); }
 
     async function restoreState() {
         try {
-            const data = await chrome.storage.local.get(["searchPaths", "fileData", "configUrl"]);
-            
-            if (data.configUrl) {
-                parseAndApplyConfigUrl(data.configUrl, false);
-                configUrlInput.value = data.configUrl;
+            const data = await chrome.storage.local.get(["siteConfigs", "searchPaths", "configUrl", "defaultSite"]);
+
+            if (Array.isArray(data.siteConfigs) && data.siteConfigs.length > 0) {
+                siteConfigs = data.siteConfigs
+                    .map(function (item) {
+                        return {
+                            site: normalizeSiteInput(item?.site),
+                            folders: Array.isArray(item?.folders) ? item.folders.filter(Boolean) : []
+                        };
+                    })
+                    .filter(function (item) { return item.site; });
             } else {
-                configUrlInput.value = CONFIG.fullUrl;
+                migrateLegacyState(data);
             }
 
-            if (data.searchPaths && Array.isArray(data.searchPaths)) {
-                // Migration: convert old string[] format to {path, checked}[]
-                searchPaths = data.searchPaths.map(p => {
-                    if (typeof p === "string") return { path: p, checked: true };
-                    return p;
-                });
-                renderPathList();
-                updateFilterOptions();
+            if (siteConfigs.length === 0) {
+                siteConfigs = [{ site: DEFAULT_SITE, folders: [] }];
             }
-            if (data.fileData && typeof data.fileData === "object") {
-                for (const [key, value] of Object.entries(data.fileData)) {
-                    fileData.set(key, value);
-                }
-                // Re-render to show file counts
-                renderPathList();
-            }
+
+            defaultSite = normalizeSiteInput(data.defaultSite) || "";
+            ensureDefaultSite();
+            saveSiteConfigs();
+            renderSiteList();
+            renderPathList();
+            updateSearchFilterOptions();
+            updateSelectedLibraryHint();
+            chrome.storage.local.remove("fileData");
+            chrome.storage.local.remove("searchPaths");
+            chrome.storage.local.remove("configUrl");
         } catch (e) {
             console.warn("Could not restore state:", e);
         }
@@ -922,7 +807,8 @@
                 return;
             }
 
-            if (!matchesConfiguredPath(relativePath)) {
+            const matchedSiteConfig = getSiteConfigByServerRelativePath(relativePath);
+            if (!matchedSiteConfig) {
                 return;
             }
 
@@ -938,7 +824,6 @@
                 return;
             }
 
-            const cachedFile = getCachedFileByPath(relativePath);
             const fileKey = relativePath.toLowerCase();
             if (uniqueFiles.has(fileKey)) {
                 return;
@@ -947,9 +832,11 @@
             uniqueFiles.set(fileKey, {
                 name,
                 path: relativePath,
-                size: parseInt(getVal("Size") || cachedFile?.size || "0", 10),
-                modified: getVal("LastModifiedTime") || cachedFile?.modified || "",
-                isCheckedOut: cachedFile ? cachedFile.isCheckedOut : false
+                site: matchedSiteConfig.site,
+                siteUrl: buildSiteUrl(matchedSiteConfig.site),
+                size: parseInt(getVal("Size") || "0", 10),
+                modified: getVal("LastModifiedTime") || "",
+                isCheckedOut: false
             });
         });
 
@@ -962,7 +849,7 @@
         const maxRows = 500;
 
         for (let startRow = 0; startRow < maxRows; startRow += rowLimit) {
-            const searchUrl = CONFIG.siteUrl +
+            const searchUrl = TENANT_ORIGIN +
                 "/_api/search/query?querytext='" + encodeURIComponent(queryText) +
                 "'&startrow=" + startRow +
                 "&rowlimit=" + rowLimit +
@@ -1005,131 +892,19 @@
     }
 
     // ============================================
-    // File Loading (rate-limited, cached)
+    // Search Scope
     // ============================================
-    function delayMs(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-    function throwIfRefreshCancelled(controller) {
-        if (controller && controller.cancelled) {
-            throw new Error(FETCH_STOPPED_ERROR);
-        }
-    }
-
     function getSearchQueryPaths() {
-        return [CONFIG.fullUrl];
+        return siteConfigs.map(function (siteConfig) {
+            return buildLibraryUrl(siteConfig.site);
+        });
     }
 
-    // Only CHECKED paths - used for refresh
-    function getCheckedRoots() {
-        const checked = searchPaths.filter(p => p.checked);
-        if (checked.length === 0) return [CONFIG.folderPath];
-        return checked.map(p => CONFIG.folderPath + p.path);
-    }
-
-    // Load only CHECKED folders (used by Refresh)
-    async function loadFilesForChecked(controller) {
-        const roots = getCheckedRoots();
-        const allFiles = [];
-
-        for (const root of roots) {
-            throwIfRefreshCancelled(controller);
-            const files = await loadFilesFromFolder(root, controller);
-            throwIfRefreshCancelled(controller);
-            fileData.set(root, { files, time: Date.now() });
-            allFiles.push(...files);
-        }
-
-        saveData();
-        renderPathList();
-        return allFiles;
-    }
-
-    function getCachedFileByPath(serverRelativePath) {
-        const lookupPath = String(serverRelativePath || "").toLowerCase();
-        if (!lookupPath) return null;
-
-        for (const entry of fileData.values()) {
-            const match = (entry.files || []).find(function (file) {
-                return String(file.path || "").toLowerCase() === lookupPath;
-            });
-            if (match) return match;
-        }
-
-        return null;
-    }
-
-    async function loadFilesFromFolder(rootPath, controller) {
-        const allFiles = [];
-        const queue = [rootPath];
-
-        while (queue.length > 0) {
-            throwIfRefreshCancelled(controller);
-            const batch = queue.splice(0, BATCH_SIZE);
-            const batchResults = await Promise.all(
-                batch.map(fp => fetchFolderContents(fp))
-            );
-
-            for (const result of batchResults) {
-                allFiles.push(...result.files);
-                queue.push(...result.subfolders);
-            }
-
-            showSettingsStatus("loading", "Loading... (" + allFiles.length + " files, " + queue.length + " folders remaining)");
-
-            if (queue.length > 0) {
-                await delayMs(DELAY_MS);
-                throwIfRefreshCancelled(controller);
-            }
-        }
-
-        return allFiles;
-    }
-
-    async function fetchFolderContents(folderPath) {
-        const files = [];
-        const subfolders = [];
-
-        try {
-            const filesUrl = CONFIG.siteUrl +
-                "/_api/web/GetFolderByServerRelativeUrl('" +
-                encodeURIComponent(folderPath) +
-                "')/Files?$top=5000&$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType";
-
-            const filesData = await bgFetch(filesUrl, {
-                method: "GET",
-                headers: { "Accept": "application/json;odata=verbose" }
-            });
-
-            for (const file of (filesData.d?.results || [])) {
-                files.push({
-                    name: file.Name,
-                    path: file.ServerRelativeUrl,
-                    size: parseInt(file.Length || 0),
-                    modified: file.TimeLastModified || "",
-                    isCheckedOut: isFileCheckedOut(file.CheckOutType)
-                });
-            }
-
-            const foldersUrl = CONFIG.siteUrl +
-                "/_api/web/GetFolderByServerRelativeUrl('" +
-                encodeURIComponent(folderPath) +
-                "')/Folders?$select=Name,ServerRelativeUrl";
-
-            const foldersData = await bgFetch(foldersUrl, {
-                method: "GET",
-                headers: { "Accept": "application/json;odata=verbose" }
-            });
-
-            for (const folder of (foldersData.d?.results || [])) {
-                if (folder.Name !== "Forms" && !folder.Name.startsWith("_")) {
-                    subfolders.push(folder.ServerRelativeUrl);
-                }
-            }
-        } catch (e) {
-            console.warn("Error fetching: " + folderPath, e);
-        }
-
-        return { files, subfolders };
+    function getSiteConfigByServerRelativePath(serverRelativePath) {
+        return siteConfigs.find(function (siteConfig) {
+            const libraryPath = buildLibraryPath(siteConfig.site);
+            return serverRelativePath === libraryPath || serverRelativePath.startsWith(libraryPath + "/");
+        }) || null;
     }
 
     // ============================================
@@ -1151,9 +926,7 @@
         showStatus("success", '✅ Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"');
 
         files.forEach(function (file) {
-            const displayPath = getDisplayFolderPath(file.path, file.name);
             const viewFileUrl = getViewFileUrl(file.path);
-            const folderUrl = getFolderUrl(file.path);
 
             const item = document.createElement("div");
             item.className = "sp-file-item";
@@ -1165,13 +938,12 @@
                 '<span class="sp-file-icon">' + getFileIcon(file.name) + '</span>' +
                 '<div class="sp-file-info">' +
                 '<div class="sp-file-name">' + highlightText(escapeHtml(file.name), query) + '</div>' +
-                '<div class="sp-file-path">📂 ' + escapeHtml(displayPath) + '</div>' +
+                '<div class="sp-file-path"></div>' +
                 (file.size ? '<div class="sp-file-size">' + formatFileSize(file.size) + '</div>' : '') +
                 '</div>' +
                 '<div class="sp-file-actions">' +
                 (canOpenInDesktopApp(file) ? '<button class="sp-action-btn sp-action-desktop" title="Open in desktop app">🖥️</button>' : '') +
                 '<button class="sp-action-btn sp-action-checkout" title="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '">' + getCheckoutActionIcon(file.isCheckedOut) + '</button>' +
-                '<button class="sp-action-btn sp-action-folder" title="Open folder">📂</button>' +
                 '</div>';
 
             const desktopBtn = item.querySelector(".sp-action-desktop");
@@ -1187,10 +959,8 @@
                 await toggleFileCheckout(file, item.querySelector(".sp-action-checkout"));
             });
 
-            item.querySelector(".sp-action-folder").addEventListener("click", (e) => {
-                e.stopPropagation();
-                window.open(folderUrl, "_blank");
-            });
+            const pathEl = item.querySelector(".sp-file-path");
+            pathEl.appendChild(buildFolderBreadcrumb(file));
 
             resultsEl.appendChild(item);
         });
@@ -1206,7 +976,7 @@
 
         try {
             if (nextAction === "checkOut") {
-                await sharePointCheckOut(file.path);
+                await sharePointCheckOut(file);
                 file.isCheckedOut = true;
                 buttonEl.textContent = getCheckoutActionIcon(true);
                 buttonEl.title = "Check in file";
@@ -1217,13 +987,12 @@
                     buttonEl.textContent = originalLabel;
                     return;
                 }
-                await sharePointCheckIn(file.path, comment);
+                await sharePointCheckIn(file, comment);
                 file.isCheckedOut = false;
                 buttonEl.textContent = getCheckoutActionIcon(false);
                 buttonEl.title = "Check out file";
                 showStatus("success", '✅ Checked in "' + escapeHtml(file.name) + '"');
             }
-            saveFileDataOnly();
             if (currentPageFile && currentPageFile.path === file.path) {
                 currentPageFile.isCheckedOut = file.isCheckedOut;
                 renderCurrentPageFile();
@@ -1237,8 +1006,10 @@
         }
     }
 
-    async function sharePointCheckOut(serverRelativePath) {
-        const url = CONFIG.siteUrl +
+    async function sharePointCheckOut(file) {
+        const siteUrl = file?.siteUrl || getSiteUrlFromServerRelativePath(file?.path);
+        const serverRelativePath = file?.path || "";
+        const url = siteUrl +
             "/_api/web/getfilebyserverrelativeurl('" +
             encodeSharePointPath(serverRelativePath) +
             "')/checkOut()";
@@ -1249,8 +1020,10 @@
         });
     }
 
-    async function sharePointCheckIn(serverRelativePath, comment) {
-        const url = CONFIG.siteUrl +
+    async function sharePointCheckIn(file, comment) {
+        const siteUrl = file?.siteUrl || getSiteUrlFromServerRelativePath(file?.path);
+        const serverRelativePath = file?.path || "";
+        const url = siteUrl +
             "/_api/web/getfilebyserverrelativeurl('" +
             encodeSharePointPath(serverRelativePath) +
             "')/checkIn(comment='" +
@@ -1320,23 +1093,62 @@
     // Filter Helpers
     // ============================================
     function applyFilter(files) {
-        const filterValue = filterSelect.value;
-        if (!filterValue) return files; // "All folders"
-        const filterRoot = CONFIG.folderPath + filterValue;
-        return files.filter(f => f.path === filterRoot || f.path.startsWith(filterRoot + "/"));
+        const selectedSite = siteFilterSelect.value;
+        const selectedFolderKey = folderFilterSelect.value;
+
+        return files.filter(function (file) {
+            if (selectedSite && file.site !== selectedSite) {
+                return false;
+            }
+            if (!selectedFolderKey) {
+                return true;
+            }
+
+            const parts = selectedFolderKey.split("|");
+            const folderSite = parts[0];
+            const folderPath = parts.slice(1).join("|");
+            const folderRoot = buildLibraryPath(folderSite) + folderPath;
+            return file.site === folderSite && (file.path === folderRoot || file.path.startsWith(folderRoot + "/"));
+        });
     }
 
-    function updateFilterOptions() {
-        const currentValue = filterSelect.value;
-        filterSelect.innerHTML = '<option value="">All folders</option>';
-        searchPaths.forEach(item => {
+    function updateSearchFilterOptions() {
+        const currentSiteValue = siteFilterSelect.value;
+        siteFilterSelect.innerHTML = '<option value="">All sites</option>';
+        siteConfigs.forEach(function (siteConfig) {
             const opt = document.createElement("option");
-            opt.value = item.path;
-            opt.textContent = item.path;
-            filterSelect.appendChild(opt);
+            opt.value = siteConfig.site;
+            opt.textContent = siteConfig.site;
+            siteFilterSelect.appendChild(opt);
         });
-        // Restore previous selection if still valid
-        filterSelect.value = currentValue;
+        siteFilterSelect.value = currentSiteValue || defaultSite || "";
+        if (siteFilterSelect.value !== (currentSiteValue || defaultSite || "")) {
+            siteFilterSelect.value = defaultSite || "";
+        }
+        updateFolderFilterOptions();
+    }
+
+    function updateFolderFilterOptions() {
+        const selectedSite = siteFilterSelect.value;
+        const currentValue = folderFilterSelect.value;
+        folderFilterSelect.innerHTML = '<option value="">All folders</option>';
+
+        siteConfigs.forEach(function (siteConfig) {
+            if (selectedSite && siteConfig.site !== selectedSite) {
+                return;
+            }
+            siteConfig.folders.forEach(function (path) {
+                const opt = document.createElement("option");
+                opt.value = siteConfig.site + "|" + path;
+                opt.textContent = selectedSite ? path : siteConfig.site + " " + path;
+                folderFilterSelect.appendChild(opt);
+            });
+        });
+
+        folderFilterSelect.value = currentValue;
+        if (folderFilterSelect.value !== currentValue) {
+            folderFilterSelect.value = "";
+        }
     }
 
     // ============================================
@@ -1387,10 +1199,6 @@
         });
     }
 
-    function matchesConfiguredPath(serverRelativePath) {
-        return serverRelativePath.startsWith(CONFIG.folderPath + "/");
-    }
-
     function encodeSharePointPath(path) {
         return encodeURIComponent(String(path || "").replace(/'/g, "''"));
     }
@@ -1438,24 +1246,70 @@
     }
 
     function getSiteUrlFromServerRelativePath(serverRelativePath) {
+        const site = getSiteSlugFromServerRelativePath(serverRelativePath);
+        return site ? buildSiteUrl(site) : "";
+    }
+
+    function getSiteSlugFromServerRelativePath(serverRelativePath) {
         if (!serverRelativePath) return "";
-        const segments = String(serverRelativePath).split("/").filter(Boolean);
-        if (segments.length < 2) return "";
-        return window.location.origin + "/" + segments[0] + "/" + segments[1];
+        const match = String(serverRelativePath).match(/^\/sites\/([^/]+)/i);
+        return match ? match[1] : "";
     }
 
     function getFolderPath(serverRelativePath, fileName) {
         return String(serverRelativePath || "").replace("/" + (fileName || ""), "");
     }
 
-    function getDisplayFolderPath(serverRelativePath, fileName) {
-        const parentFolderPath = getFolderPath(serverRelativePath, fileName);
-        return parentFolderPath.replace(CONFIG.folderPath, "").replace(/^\//, "") || "/";
+    function buildFolderBreadcrumb(file) {
+        const wrapper = document.createElement("div");
+        const serverRelativePath = file?.path || "";
+        const site = file?.site || getSiteConfigByServerRelativePath(serverRelativePath)?.site || getSiteSlugFromServerRelativePath(serverRelativePath);
+        const libraryPath = site ? buildLibraryPath(site) : "";
+        const parentFolderPath = getFolderPath(serverRelativePath, file?.name || "");
+        const relativePath = libraryPath && parentFolderPath.startsWith(libraryPath)
+            ? parentFolderPath.slice(libraryPath.length)
+            : "";
+        const segments = relativePath.split("/").filter(Boolean);
+
+        wrapper.appendChild(document.createTextNode(site || ""));
+
+        if (segments.length === 0) {
+            wrapper.appendChild(document.createTextNode(" / "));
+            wrapper.appendChild(createFolderLink("/", getFolderUrlFromFolderPath(parentFolderPath)));
+            return wrapper;
+        }
+
+        let currentPath = "";
+        segments.forEach(function (segment, index) {
+            currentPath += "/" + segment;
+            wrapper.appendChild(document.createTextNode(index === 0 ? " / " : " / "));
+            wrapper.appendChild(createFolderLink(segment, getFolderUrlFromFolderPath(libraryPath + currentPath)));
+        });
+
+        return wrapper;
+    }
+
+    function createFolderLink(label, href) {
+        const link = document.createElement("a");
+        link.className = "sp-file-path-link";
+        link.href = href;
+        link.textContent = label;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.addEventListener("click", function (e) {
+            e.stopPropagation();
+        });
+        return link;
     }
 
     function getFolderUrl(serverRelativePath) {
         const parentFolderPath = getFolderPath(serverRelativePath, String(serverRelativePath || "").split("/").pop() || "");
-        return getLibraryRootUrl() + "/Forms/AllItems.aspx?id=" + encodeURIComponent(parentFolderPath);
+        return getFolderUrlFromFolderPath(parentFolderPath);
+    }
+
+    function getFolderUrlFromFolderPath(folderPath) {
+        const libraryRootUrl = getLibraryRootUrlByPath(folderPath);
+        return libraryRootUrl + "/Forms/AllItems.aspx?id=" + encodeURIComponent(folderPath);
     }
 
     function getCurrentPageFileDetailsUrl(file) {
@@ -1537,21 +1391,24 @@
         const path = String(serverRelativePath || "");
         if (!path) return "";
 
-        const libraryRootUrl = getLibraryRootUrl();
-        if (libraryRootUrl && path.startsWith(CONFIG.folderPath)) {
-            const relativePath = path.slice(CONFIG.folderPath.length);
+        const siteConfig = getSiteConfigByServerRelativePath(path);
+        const libraryRootUrl = getLibraryRootUrlByPath(path);
+        if (libraryRootUrl && siteConfig) {
+            const relativePath = path.slice(buildLibraryPath(siteConfig.site).length);
             return libraryRootUrl + relativePath;
         }
 
         try {
-            return new URL(CONFIG.fullUrl).origin + path;
+            return TENANT_ORIGIN + path;
         } catch (e) {
             return path;
         }
     }
 
-    function getLibraryRootUrl() {
-        return String(CONFIG.fullUrl || "").replace(/\/+$/, "");
+    function getLibraryRootUrlByPath(serverRelativePath) {
+        const siteConfig = getSiteConfigByServerRelativePath(serverRelativePath);
+        const site = siteConfig?.site || getSiteSlugFromServerRelativePath(serverRelativePath);
+        return site ? buildLibraryUrl(site) : "";
     }
 
     function getFileIcon(filename) {

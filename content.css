@@ -110,6 +110,7 @@
 /* Search Tab */
 .sp-search-input-section { padding: 12px 20px; border-bottom: 1px solid #f0f0f0; }
 .sp-search-row { display: flex; gap: 8px; align-items: center; }
+.sp-search-filters-row { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; flex-direction: column; }
 .sp-search-input-wrap { flex: 1; position: relative; display: flex; align-items: center; }
 .sp-search-icon { position: absolute; left: 12px; font-size: 16px; pointer-events: none; color: #999; }
 .sp-search-input {
@@ -127,6 +128,8 @@
 .sp-clear-btn.sp-visible { display: block; }
 
 .sp-filter-select {
+    flex: 1;
+    min-width: 0;
     padding: 0 12px;
     height: 44px; box-sizing: border-box;
     border: 2px solid #ddd;
@@ -136,7 +139,6 @@
     background: #fff;
     color: #333;
     cursor: pointer;
-    max-width: 350px;
     transition: border-color 0.2s;
     text-overflow: ellipsis;
 }
@@ -178,6 +180,8 @@
 .sp-file-name { font-size: 13px; font-weight: 600; color: #0078d4; word-break: break-all; }
 .sp-file-name .sp-highlight { background: #fff3cd; padding: 0 2px; border-radius: 2px; }
 .sp-file-path { font-size: 11px; color: #666; margin-top: 2px; word-break: break-all; }
+.sp-file-path-link { color: #666; text-decoration: underline; }
+.sp-file-path-link:hover { color: #0078d4; }
 .sp-file-size { font-size: 11px; color: #aaa; margin-top: 1px; }
 .sp-file-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .sp-action-btn {
@@ -200,7 +204,7 @@
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
 }
 
-.sp-path-add-row { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
+.sp-path-add-row { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .sp-path-input {
     flex: 1; padding: 8px 10px; border: 2px solid #ddd;
     border-radius: 6px; font-size: 13px; outline: none;
@@ -225,21 +229,34 @@
     border: 1px solid #eee; transition: all 0.12s;
 }
 .sp-path-item:hover { border-color: #ccc; }
-
-.sp-path-checkbox {
-    width: 16px; height: 16px; cursor: pointer;
-    accent-color: #0078d4; flex-shrink: 0;
+.sp-path-item.sp-path-item-active {
+    border-color: #0078d4;
+    background: #f0f7ff;
 }
 
 .sp-path-text { flex: 1; font-size: 13px; color: #333; font-family: 'Consolas', monospace; }
+.sp-site-select-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    font-size: 13px;
+    color: #333;
+    font-family: 'Consolas', monospace;
+    cursor: pointer;
+}
+.sp-site-default-radio {
+    margin: 0;
+    accent-color: #0078d4;
+    cursor: pointer;
+}
 
 .sp-path-edit-input {
     flex: 1; padding: 4px 8px; border: 1px solid #0078d4;
     border-radius: 4px; font-size: 13px; font-family: 'Consolas', monospace;
     outline: none;
 }
-
-.sp-path-file-count { font-size: 11px; color: #999; flex-shrink: 0; }
 
 .sp-path-edit, .sp-path-remove {
     background: none; border: none; font-size: 14px; color: #ccc;
@@ -248,36 +265,7 @@
 .sp-path-edit:hover { color: #0078d4; background: #e8f4fd; }
 .sp-path-remove:hover { color: #d13438; background: #fde7e9; }
 
-.sp-refresh-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; }
-.sp-refresh-actions { display: flex; gap: 8px; }
-.sp-refresh-full-btn {
-    flex: 1; padding: 10px; background: #0078d4; color: white;
-    border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
-    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-}
-.sp-refresh-full-btn:hover { background: #106ebe; }
-.sp-refresh-full-btn:disabled { background: #ccc; cursor: not-allowed; }
-.sp-refresh-stop-btn {
-    padding: 10px 14px; background: #d13438; color: white;
-    border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.sp-refresh-stop-btn:hover { background: #b02a2e; }
-.sp-refresh-stop-btn:disabled { background: #e5aeb0; cursor: not-allowed; }
 .sp-refresh-hint { font-size: 11px; color: #999; margin-top: 6px; text-align: center; }
-
-/* Import / Export */
-.sp-import-export-section { margin-bottom: 20px; }
-.sp-ie-row { display: flex; gap: 8px; }
-.sp-ie-btn {
-    flex: 1; padding: 10px; border: none; border-radius: 8px;
-    font-size: 13px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-}
-.sp-export-btn { background: #107c10; color: white; }
-.sp-export-btn:hover { background: #0e6b0e; }
-.sp-import-btn { background: #0078d4; color: white; }
-.sp-import-btn:hover { background: #106ebe; }
 
 /* Footer */
 .sp-footer {
