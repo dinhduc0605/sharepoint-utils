@@ -110,7 +110,9 @@
 /* Search Tab */
 .sp-search-input-section { padding: 12px 20px; border-bottom: 1px solid #f0f0f0; }
 .sp-search-row { display: flex; gap: 8px; align-items: center; }
-.sp-search-filters-row { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; flex-direction: column; }
+.sp-search-filters-row { display: flex; gap: 10px; align-items: stretch; margin-top: 10px; flex-direction: row; }
+.sp-filter-group { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sp-filter-label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.3px; }
 .sp-search-input-wrap { flex: 1; position: relative; display: flex; align-items: center; }
 .sp-search-icon { position: absolute; left: 12px; font-size: 16px; pointer-events: none; color: #999; }
 .sp-search-input {
@@ -128,21 +130,25 @@
 .sp-clear-btn.sp-visible { display: block; }
 
 .sp-filter-select {
-    flex: 1;
+    width: 100%;
     min-width: 0;
-    padding: 0 12px;
+    padding: 10px 32px 10px 12px;
     height: 44px; box-sizing: border-box;
-    border: 2px solid #ddd;
+    border: 1.5px solid #ddd;
     border-radius: 8px;
     font-size: 13px;
     outline: none;
-    background: #fff;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23666' d='M1.41 0L6 4.58 10.59 0 12 1.41l-6 6-6-6z'/%3E%3C/svg%3E") no-repeat right 12px center;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
     color: #333;
     cursor: pointer;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s;
     text-overflow: ellipsis;
 }
-.sp-filter-select:focus { border-color: #0078d4; }
+.sp-filter-select:focus { border-color: #0078d4; box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.1); }
+.sp-filter-select:hover { border-color: #bbb; }
 
 .sp-search-hint { font-size: 11px; color: #bbb; margin-top: 6px; }
 
@@ -215,6 +221,19 @@
     border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .sp-add-path-btn:hover { background: #106ebe; }
+.sp-add-path-btn.sp-btn-secondary,
+#sp-current-site-btn,
+#sp-current-page-btn {
+    background: #f3f3f3;
+    color: #333;
+    border: 1.5px solid #ddd;
+}
+.sp-add-path-btn.sp-btn-secondary:hover,
+#sp-current-site-btn:hover,
+#sp-current-page-btn:hover {
+    background: #e7e7e7;
+    border-color: #bbb;
+}
 
 .sp-path-list { display: flex; flex-direction: column; gap: 4px; }
 

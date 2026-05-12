@@ -68,12 +68,18 @@
                         </div>
                     </div>
                     <div class="sp-search-filters-row">
-                        <select class="sp-filter-select" id="sp-site-filter-select" title="Filter by site">
-                            <option value="">All sites</option>
-                        </select>
-                        <select class="sp-filter-select" id="sp-folder-filter-select" title="Filter by subfolder">
-                            <option value="">All folders</option>
-                        </select>
+                        <div class="sp-filter-group">
+                            <label class="sp-filter-label" for="sp-site-filter-select">Site</label>
+                            <select class="sp-filter-select" id="sp-site-filter-select" title="Filter by site">
+                                <option value="">All sites</option>
+                            </select>
+                        </div>
+                        <div class="sp-filter-group">
+                            <label class="sp-filter-label" for="sp-folder-filter-select">Folder</label>
+                            <select class="sp-filter-select" id="sp-folder-filter-select" title="Filter by subfolder">
+                                <option value="">All folders</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="sp-search-hint">Type at least 3 characters to search</div>
                 </div>
@@ -88,7 +94,8 @@
                         <div class="sp-settings-label">Add Site</div>
                         <div class="sp-path-add-row">
                             <input type="text" class="sp-path-input" id="sp-site-input" placeholder="site-name" autocomplete="off">
-                            <button class="sp-add-path-btn" id="sp-add-site-btn">+ Add Site</button>
+                            <button class="sp-add-path-btn" id="sp-add-site-btn">+ Add</button>
+                            <button class="sp-add-path-btn" id="sp-current-site-btn">Current Site</button>
                         </div>
                         <div class="sp-refresh-hint">Library URL format: ${TENANT_ORIGIN}/sites/{site}/Shared Documents</div>
                     </div>
@@ -144,6 +151,7 @@
     const clearBtn = document.getElementById("sp-clear-btn");
     const siteInput = document.getElementById("sp-site-input");
     const addSiteBtn = document.getElementById("sp-add-site-btn");
+    const currentSiteBtn = document.getElementById("sp-current-site-btn");
     const siteListEl = document.getElementById("sp-site-list");
     const selectedLibraryHintEl = document.getElementById("sp-selected-library-hint");
     const pathInput = document.getElementById("sp-path-input");
@@ -275,6 +283,7 @@
 
     // Site management
     addSiteBtn.addEventListener("click", addSite);
+    currentSiteBtn.addEventListener("click", useCurrentSiteUrl);
     siteInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") addSite();
     });
@@ -492,6 +501,17 @@
         }
         pathInput.value = window.location.href;
         pathInput.focus();
+    }
+
+    function useCurrentSiteUrl() {
+        const site = normalizeSiteInput(window.location.href);
+        if (!site) {
+            showSettingsStatus("error", "❌ Could not detect a SharePoint site from the current URL.");
+            setTimeout(() => showSettingsStatus("", ""), 3000);
+            return;
+        }
+        siteInput.value = site;
+        siteInput.focus();
     }
 
     function normalizeSubfolderInput(rawInput, site) {
@@ -757,9 +777,10 @@
     }
 
     async function searchFilesByName(query) {
-        const searchTerms = normalizeSearchInput(query)
+        const rawQuery = String(query || "").replace(/["']/g, "").trim();
+        const normalized = normalizeSearchInput(rawQuery);
+        const searchTerms = normalized
             .split(/\s+/)
-            .map(sanitizeSearchTerm)
             .filter(Boolean);
 
         if (searchTerms.length === 0) {
@@ -769,25 +790,21 @@
         const pathClauses = getSearchQueryPaths().map(function (pathUrl) {
             return 'path:"' + pathUrl + '"';
         });
-        const propertyClauses = searchTerms.map(function (term) {
-            return "(" +
-                "Title:" + term +
-                " OR Title:" + term + "*" +
-                " OR Filename:" + term +
-                " OR Filename:" + term + "*" +
-                " OR FileLeafRef:" + term +
-                " OR FileLeafRef:" + term + "*" +
-                ")";
+
+        // Exact logic from dist extension "title" mode
+        const termClauses = searchTerms.map(function (term) {
+            return "(Title:" + term + " OR Title:" + term + "* OR Filename:" + term + " OR Filename:" + term + "* OR FileLeafRef:" + term + " OR FileLeafRef:" + term + "*)";
         });
 
-        const queryParts = [];
-        queryParts.push(propertyClauses.join(" AND "));
-        queryParts.push("IsDocument:True");
+        let queryText = termClauses.join(" ");
         if (pathClauses.length > 0) {
-            queryParts.push(pathClauses.length === 1 ? pathClauses[0] : "(" + pathClauses.join(" OR ") + ")");
+            queryText += " " + (pathClauses.length === 1 ? pathClauses[0] : "(" + pathClauses.join(" OR ") + ")");
         }
 
-        const rows = await fetchSearchRows(queryParts.join(" "));
+        // Use site URL as API base (matching dist extension)
+        const siteUrl = siteConfigs.length > 0 ? buildSiteUrl(siteConfigs[0].site) : TENANT_ORIGIN;
+
+        const rows = await fetchSearchRows(queryText, siteUrl);
         const uniqueFiles = new Map();
 
         rows.forEach(function (row) {
@@ -812,18 +829,11 @@
                 return;
             }
 
+            const isContainer = getVal("IsContainer") === "true";
+            if (isContainer) return; // Keep folder filtering for clean UI
+
             const name = getVal("Filename") || getVal("FileLeafRef") || getVal("Title") || relativePath.split("/").pop() || "";
-            const searchableText = [
-                getVal("Filename"),
-                getVal("FileLeafRef"),
-                getVal("Title"),
-                relativePath
-            ].join(" ");
-
-            if (!matchesAllSearchTerms(searchableText, searchTerms)) {
-                return;
-            }
-
+            
             const fileKey = relativePath.toLowerCase();
             if (uniqueFiles.has(fileKey)) {
                 return;
@@ -843,13 +853,14 @@
         return Array.from(uniqueFiles.values());
     }
 
-    async function fetchSearchRows(queryText) {
+    async function fetchSearchRows(queryText, apiBase) {
         const rows = [];
-        const rowLimit = 500;
-        const maxRows = 500;
+        const rowLimit = 50;
+        const maxRows = 50;
+        const baseUrl = apiBase || TENANT_ORIGIN;
 
         for (let startRow = 0; startRow < maxRows; startRow += rowLimit) {
-            const searchUrl = TENANT_ORIGIN +
+            const searchUrl = baseUrl +
                 "/_api/search/query?querytext='" + encodeURIComponent(queryText) +
                 "'&startrow=" + startRow +
                 "&rowlimit=" + rowLimit +
@@ -1193,9 +1204,11 @@
     }
 
     function matchesAllSearchTerms(text, searchTerms) {
-        const value = String(text || "").toLowerCase();
+        // Normalize using NFKC to convert full-width alphanumeric to half-width,
+        // and half-width katakana to full-width, ensuring robust Japanese string matching.
+        const value = String(text || "").normalize('NFKC').toLowerCase();
         return searchTerms.every(function (term) {
-            return value.includes(term.toLowerCase());
+            return value.includes(term.normalize('NFKC').toLowerCase());
         });
     }
 
