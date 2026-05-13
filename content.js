@@ -41,7 +41,6 @@
 
             <div class="sp-current-file sp-hidden" id="sp-current-file">
                 <div class="sp-current-file-info">
-                    <div class="sp-current-file-label">Current file</div>
                     <div class="sp-current-file-name" id="sp-current-file-name"></div>
                     <div class="sp-file-path" id="sp-current-file-path"></div>
                 </div>
@@ -767,7 +766,7 @@
         try {
             isLoading = true;
             showStatus("loading", 'Searching SharePoint for "' + escapeHtml(query) + '"...');
-            
+
             const selectedSite = siteFilterSelect.value;
             const matched = await searchFilesByName(query, selectedSite);
 
