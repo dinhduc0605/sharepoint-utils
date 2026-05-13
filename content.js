@@ -754,7 +754,9 @@
         try {
             isLoading = true;
             showStatus("loading", 'Searching SharePoint for "' + escapeHtml(query) + '"...');
-            const matched = await searchFilesByName(query);
+            
+            const selectedSite = siteFilterSelect.value;
+            const matched = await searchFilesByName(query, selectedSite);
 
             const currentQuery = searchInput.value.trim();
             if (currentQuery.length < MIN_QUERY_LENGTH) { showStatus("", ""); return; }
@@ -776,7 +778,7 @@
         }
     }
 
-    async function searchFilesByName(query) {
+    async function searchFilesByName(query, selectedSite) {
         const rawQuery = String(query || "").replace(/["']/g, "").trim();
         const normalized = normalizeSearchInput(rawQuery);
         const searchTerms = normalized
@@ -787,8 +789,13 @@
             return [];
         }
 
-        const pathClauses = getSearchQueryPaths().map(function (pathUrl) {
-            return 'path:"' + pathUrl + '"';
+        let activeConfigs = siteConfigs;
+        if (selectedSite) {
+            activeConfigs = siteConfigs.filter(c => c.site === selectedSite);
+        }
+
+        const pathClauses = activeConfigs.map(function (siteConfig) {
+            return 'path:"' + buildLibraryUrl(siteConfig.site) + '"';
         });
 
         // Exact logic from dist extension "title" mode
@@ -801,8 +808,9 @@
             queryText += " " + (pathClauses.length === 1 ? pathClauses[0] : "(" + pathClauses.join(" OR ") + ")");
         }
 
-        // Use site URL as API base (matching dist extension)
-        const siteUrl = siteConfigs.length > 0 ? buildSiteUrl(siteConfigs[0].site) : TENANT_ORIGIN;
+        // Use selected site URL as API base if available, otherwise fallback
+        const baseSite = selectedSite || (siteConfigs.length > 0 ? siteConfigs[0].site : null);
+        const siteUrl = baseSite ? buildSiteUrl(baseSite) : TENANT_ORIGIN;
 
         const rows = await fetchSearchRows(queryText, siteUrl);
         const uniqueFiles = new Map();
