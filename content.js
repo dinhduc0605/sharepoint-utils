@@ -833,7 +833,7 @@
             if (isContainer) return; // Keep folder filtering for clean UI
 
             const name = getVal("Filename") || getVal("FileLeafRef") || getVal("Title") || relativePath.split("/").pop() || "";
-            
+
             const fileKey = relativePath.toLowerCase();
             if (uniqueFiles.has(fileKey)) {
                 return;
@@ -855,8 +855,8 @@
 
     async function fetchSearchRows(queryText, apiBase) {
         const rows = [];
-        const rowLimit = 50;
-        const maxRows = 50;
+        const rowLimit = 500;
+        const maxRows = 500;
         const baseUrl = apiBase || TENANT_ORIGIN;
 
         for (let startRow = 0; startRow < maxRows; startRow += rowLimit) {
