@@ -80,6 +80,17 @@
                                 <option value="">All folders</option>
                             </select>
                         </div>
+                        <div class="sp-filter-group">
+                            <label class="sp-filter-label" for="sp-type-filter-select">Type</label>
+                            <select class="sp-filter-select" id="sp-type-filter-select" title="Filter by file type">
+                                <option value="">All types</option>
+                                <option value="excel">Excel</option>
+                                <option value="word">Word</option>
+                                <option value="powerpoint">PowerPoint</option>
+                                <option value="pdf">PDF</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="sp-search-hint">Type at least 3 characters to search</div>
                 </div>
@@ -180,6 +191,7 @@
 
     const siteFilterSelect = document.getElementById("sp-site-filter-select");
     const folderFilterSelect = document.getElementById("sp-folder-filter-select");
+    const fileTypeFilterSelect = document.getElementById("sp-type-filter-select");
     const tabBtns = backdrop.querySelectorAll(".sp-tab-btn");
     const tabPanels = backdrop.querySelectorAll(".sp-tab-panel");
 
@@ -271,6 +283,12 @@
     });
 
     folderFilterSelect.addEventListener("change", () => {
+        if (lastSearchResults.length > 0 && lastQuery) {
+            displayResults(applyFilter(lastSearchResults), lastQuery);
+        }
+    });
+
+    fileTypeFilterSelect.addEventListener("change", () => {
         if (lastSearchResults.length > 0 && lastQuery) {
             displayResults(applyFilter(lastSearchResults), lastQuery);
         }
@@ -1108,23 +1126,37 @@
     // ============================================
     // Filter Helpers
     // ============================================
+    function getFileTypeCategory(fileName) {
+        const ext = String(fileName || "").split(".").pop().toLowerCase();
+        if (["xls", "xlsx", "xlsm", "xlsb", "csv"].includes(ext)) return "excel";
+        if (["doc", "docx", "dot", "dotx"].includes(ext)) return "word";
+        if (["ppt", "pptx", "pptm", "pps", "ppsx"].includes(ext)) return "powerpoint";
+        if (ext === "pdf") return "pdf";
+        return "other";
+    }
+
     function applyFilter(files) {
         const selectedSite = siteFilterSelect.value;
         const selectedFolderKey = folderFilterSelect.value;
+        const selectedType = fileTypeFilterSelect.value;
 
         return files.filter(function (file) {
             if (selectedSite && file.site !== selectedSite) {
                 return false;
             }
-            if (!selectedFolderKey) {
-                return true;
+            if (selectedFolderKey) {
+                const parts = selectedFolderKey.split("|");
+                const folderSite = parts[0];
+                const folderPath = parts.slice(1).join("|");
+                const folderRoot = buildLibraryPath(folderSite) + folderPath;
+                if (!(file.site === folderSite && (file.path === folderRoot || file.path.startsWith(folderRoot + "/")))) {
+                    return false;
+                }
             }
-
-            const parts = selectedFolderKey.split("|");
-            const folderSite = parts[0];
-            const folderPath = parts.slice(1).join("|");
-            const folderRoot = buildLibraryPath(folderSite) + folderPath;
-            return file.site === folderSite && (file.path === folderRoot || file.path.startsWith(folderRoot + "/"));
+            if (selectedType && getFileTypeCategory(file.name) !== selectedType) {
+                return false;
+            }
+            return true;
         });
     }
 
