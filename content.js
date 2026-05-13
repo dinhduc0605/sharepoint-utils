@@ -15,7 +15,7 @@
     const DEFAULT_SITE = "msteams_268a65";
 
     const MIN_QUERY_LENGTH = 3;
-    const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb"]);
+    const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb", "ppt", "pptx", "pptm"]);
 
     // siteConfigs: array of { site: string, folders: string[] }
     let siteConfigs = [];
@@ -43,11 +43,11 @@
                 <div class="sp-current-file-info">
                     <div class="sp-current-file-label">Current file</div>
                     <div class="sp-current-file-name" id="sp-current-file-name"></div>
+                    <div class="sp-file-path" id="sp-current-file-path"></div>
                 </div>
                 <div class="sp-file-actions">
                     <button class="sp-action-btn sp-action-desktop" id="sp-current-file-desktop-btn" title="Open in desktop app">🖥️</button>
                     <button class="sp-action-btn sp-action-checkout" id="sp-current-file-checkout-btn" title="Check out file">📝</button>
-                    <button class="sp-action-btn sp-action-folder" id="sp-current-file-folder-btn" title="Open folder">📂</button>
                 </div>
             </div>
 
@@ -165,9 +165,9 @@
     const settingsStatusEl = document.getElementById("sp-settings-status");
     const currentFileEl = document.getElementById("sp-current-file");
     const currentFileNameEl = document.getElementById("sp-current-file-name");
+    const currentFilePathEl = document.getElementById("sp-current-file-path");
     const currentFileDesktopBtn = document.getElementById("sp-current-file-desktop-btn");
     const currentFileCheckoutBtn = document.getElementById("sp-current-file-checkout-btn");
-    const currentFileFolderBtn = document.getElementById("sp-current-file-folder-btn");
     const inlineModalBackdrop = document.getElementById("sp-inline-modal-backdrop");
     const inlineModal = document.getElementById("sp-inline-modal");
     const inlineModalSubtitleEl = document.getElementById("sp-inline-modal-subtitle");
@@ -232,11 +232,6 @@
         e.stopPropagation();
         if (!currentPageFile) return;
         openFileInDesktopApp(currentPageFile);
-    });
-    currentFileFolderBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!currentPageFile) return;
-        window.open(getFolderUrl(currentPageFile.path), "_blank");
     });
 
     // Search input - press Enter to search
@@ -1102,6 +1097,8 @@
         }
 
         currentFileNameEl.textContent = currentPageFile.name;
+        currentFilePathEl.innerHTML = "";
+        currentFilePathEl.appendChild(buildFolderBreadcrumb(currentPageFile));
         currentFileDesktopBtn.classList.toggle("sp-hidden", !canOpenInDesktopApp(currentPageFile));
         currentFileCheckoutBtn.textContent = getCheckoutActionIcon(currentPageFile.isCheckedOut);
         currentFileCheckoutBtn.title = currentPageFile.isCheckedOut ? "Check in file" : "Check out file";
@@ -1383,7 +1380,7 @@
     function openFileInDesktopApp(file) {
         const desktopUrl = getDesktopOpenUrl(file);
         if (!desktopUrl) {
-            showStatus("error", "❌ Desktop open is only available for Word and Excel files");
+            showStatus("error", "❌ Desktop open is only available for Word, Excel, and PowerPoint files");
             return;
         }
         window.location.href = desktopUrl;
@@ -1400,6 +1397,7 @@
         const ext = String(fileName || "").split(".").pop().toLowerCase();
         if (ext === "doc" || ext === "docx") return "ms-word:ofe|u|";
         if (ext === "xls" || ext === "xlsx" || ext === "xlsm" || ext === "xlsb") return "ms-excel:ofe|u|";
+        if (ext === "ppt" || ext === "pptx" || ext === "pptm") return "ms-powerpoint:ofe|u|";
         return "";
     }
 
