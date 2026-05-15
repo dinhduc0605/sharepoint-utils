@@ -142,6 +142,9 @@
             <div class="sp-inline-modal" id="sp-inline-modal" role="dialog" aria-modal="true" aria-labelledby="sp-inline-modal-title">
                 <div class="sp-inline-modal-title" id="sp-inline-modal-title">Check In Comment</div>
                 <div class="sp-inline-modal-subtitle" id="sp-inline-modal-subtitle"></div>
+                <div class="sp-inline-modal-warning" id="sp-inline-modal-warning">
+                    ⚠️ Make sure Excel shows <strong>"Saved"</strong> before checking in — checking in too early may cause unsaved changes to be lost.
+                </div>
                 <textarea class="sp-inline-modal-textarea" id="sp-inline-modal-textarea" placeholder="Add a check-in comment"></textarea>
                 <div class="sp-inline-modal-actions">
                     <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-inline-modal-cancel-btn">Cancel</button>

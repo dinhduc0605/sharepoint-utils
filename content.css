@@ -319,6 +319,16 @@
     font-size: 12px;
     color: #666;
 }
+.sp-inline-modal-warning {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #fff8e1;
+    border-left: 3px solid #f59e0b;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #7a5c00;
+    line-height: 1.5;
+}
 .sp-inline-modal-textarea {
     width: 100%;
     min-height: 100px;
