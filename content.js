@@ -783,6 +783,8 @@
             console.error("Search error:", error);
             if (error.message.includes("NO_SP_TAB")) {
                 showStatus("error", "🔒 No SharePoint tab found! Please open SharePoint in a tab and login first.");
+            } else if (error.message.includes("SP_TAB_DISCARDED")) {
+                showStatus("error", "🔄 SharePoint tab was unloaded after long inactivity. Please click on the SharePoint tab to reload it, then try again.");
             } else if (error.message.includes("403") || error.message.includes("401") || error.message.includes("429")) {
                 showStatus("error", "🔒 Not authenticated or throttled! Please open SharePoint in a tab and login first.");
             } else {

@@ -47,84 +47,109 @@ async function handleSharePointFetch(url, options = {}) {
         throw new Error("NO_SP_TAB");
     }
 
-    const tabId = tabs[0].id;
+    // Filter out discarded tabs (Chrome unloads tabs after long idle periods).
+    // Discarded tabs still appear in tabs.query() but executeScript() will fail on them.
+    const activeTabs = tabs.filter(t => !t.discarded);
+    const candidates = activeTabs.length > 0 ? activeTabs : tabs;
 
-    const results = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: async (fetchUrl, fetchOptions) => {
-            async function getRequestDigest(targetUrl) {
-                const existingDigest = document.getElementById("__REQUESTDIGEST")?.value;
-                if (existingDigest) return existingDigest;
+    let lastError = null;
 
-                const parsedUrl = new URL(targetUrl);
-                const apiIndex = parsedUrl.pathname.indexOf("/_api/");
-                const webBasePath = apiIndex >= 0 ? parsedUrl.pathname.slice(0, apiIndex) : "";
-                const contextInfoUrl = parsedUrl.origin + webBasePath + "/_api/contextinfo";
-                const contextResponse = await fetch(contextInfoUrl, {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {
-                        "Accept": "application/json;odata=verbose"
+    for (const tab of candidates) {
+        try {
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: async (fetchUrl, fetchOptions) => {
+                    async function getRequestDigest(targetUrl) {
+                        const existingDigest = document.getElementById("__REQUESTDIGEST")?.value;
+                        if (existingDigest) return existingDigest;
+
+                        const parsedUrl = new URL(targetUrl);
+                        const apiIndex = parsedUrl.pathname.indexOf("/_api/");
+                        const webBasePath = apiIndex >= 0 ? parsedUrl.pathname.slice(0, apiIndex) : "";
+                        const contextInfoUrl = parsedUrl.origin + webBasePath + "/_api/contextinfo";
+                        const contextResponse = await fetch(contextInfoUrl, {
+                            method: "POST",
+                            credentials: "same-origin",
+                            headers: {
+                                "Accept": "application/json;odata=verbose"
+                            }
+                        });
+
+                        if (!contextResponse.ok) {
+                            throw new Error("HTTP " + contextResponse.status + ": " + contextResponse.statusText);
+                        }
+
+                        const contextData = await contextResponse.json();
+                        const digest = contextData?.d?.GetContextWebInformation?.FormDigestValue;
+                        if (!digest) {
+                            throw new Error("Could not get SharePoint request digest");
+                        }
+
+                        return digest;
                     }
-                });
 
-                if (!contextResponse.ok) {
-                    throw new Error("HTTP " + contextResponse.status + ": " + contextResponse.statusText);
-                }
-
-                const contextData = await contextResponse.json();
-                const digest = contextData?.d?.GetContextWebInformation?.FormDigestValue;
-                if (!digest) {
-                    throw new Error("Could not get SharePoint request digest");
-                }
-
-                return digest;
-            }
-
-            try {
-                const method = (fetchOptions?.method || "GET").toUpperCase();
-                const headers = {
-                    ...(fetchOptions?.headers || {})
-                };
-
-                if (method !== "GET" && method !== "HEAD" && !headers["X-RequestDigest"]) {
-                    headers["X-RequestDigest"] = await getRequestDigest(fetchUrl);
-                }
-
-                const response = await fetch(fetchUrl, {
-                    ...fetchOptions,
-                    headers,
-                    credentials: "same-origin"
-                });
-                if (!response.ok) {
-                    return { error: "HTTP " + response.status + ": " + response.statusText };
-                }
-                const text = await response.text();
-                let data = null;
-                if (text) {
                     try {
-                        data = JSON.parse(text);
+                        const method = (fetchOptions?.method || "GET").toUpperCase();
+                        const headers = {
+                            ...(fetchOptions?.headers || {})
+                        };
+
+                        if (method !== "GET" && method !== "HEAD" && !headers["X-RequestDigest"]) {
+                            headers["X-RequestDigest"] = await getRequestDigest(fetchUrl);
+                        }
+
+                        const response = await fetch(fetchUrl, {
+                            ...fetchOptions,
+                            headers,
+                            credentials: "same-origin"
+                        });
+                        if (!response.ok) {
+                            return { error: "HTTP " + response.status + ": " + response.statusText };
+                        }
+                        const text = await response.text();
+                        let data = null;
+                        if (text) {
+                            try {
+                                data = JSON.parse(text);
+                            } catch (e) {
+                                data = { raw: text };
+                            }
+                        }
+                        return { data };
                     } catch (e) {
-                        data = { raw: text };
+                        return { error: e.message };
                     }
-                }
-                return { data };
-            } catch (e) {
-                return { error: e.message };
+                },
+                args: [url, options]
+            });
+
+            const result = results[0]?.result;
+            if (!result) {
+                lastError = new Error("Failed to execute script in SharePoint tab");
+                continue;
             }
-        },
-        args: [url, options]
-    });
-
-    const result = results[0]?.result;
-
-    if (!result) {
-        throw new Error("Failed to execute script in SharePoint tab");
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            return result.data;
+        } catch (e) {
+            // If this tab failed due to being discarded/inaccessible, try the next one
+            if (e.message && (
+                e.message.includes("Cannot access") ||
+                e.message.includes("discarded") ||
+                e.message.includes("No tab with id")
+            )) {
+                lastError = e;
+                continue;
+            }
+            // Any other error (e.g. HTTP 403) should propagate immediately
+            throw e;
+        }
     }
 
-    if (result.error) {
-        throw new Error(result.error);
+    // All candidate tabs failed
+    if (lastError && lastError.message && lastError.message.includes("Cannot access")) {
+        throw new Error("SP_TAB_DISCARDED");
     }
-
-    return result.data;
+    throw lastError || new Error("Failed to execute script in SharePoint tab");
 }
