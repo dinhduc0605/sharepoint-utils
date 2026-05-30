@@ -47,6 +47,7 @@
                 <div class="sp-file-actions">
                     <button class="sp-action-btn sp-action-desktop" id="sp-current-file-desktop-btn" title="Open in desktop app">🖥️</button>
                     <button class="sp-action-btn sp-action-checkout" id="sp-current-file-checkout-btn" title="Check out file">📝</button>
+                    <button class="sp-action-btn sp-action-share" id="sp-current-file-share-btn" title="Copy share link">🔗</button>
                 </div>
             </div>
 
@@ -62,7 +63,7 @@
                     <div class="sp-search-row">
                         <div class="sp-search-input-wrap">
                             <span class="sp-search-icon">🔍</span>
-                            <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename..." autocomplete="off">
+                            <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename (at least 3 characters)" autocomplete="off">
                             <button class="sp-clear-btn" id="sp-clear-btn" title="Clear">✕</button>
                         </div>
                     </div>
@@ -91,9 +92,7 @@
                             </select>
                         </div>
                     </div>
-                    <div class="sp-search-hint">Type at least 3 characters to search</div>
                 </div>
-                <div class="sp-status sp-hidden" id="sp-status"></div>
                 <div class="sp-results" id="sp-results"></div>
             </div>
 
@@ -180,6 +179,7 @@
     const currentFileEl = document.getElementById("sp-current-file");
     const currentFileNameEl = document.getElementById("sp-current-file-name");
     const currentFilePathEl = document.getElementById("sp-current-file-path");
+    const currentFileShareBtn = document.getElementById("sp-current-file-share-btn");
     const currentFileDesktopBtn = document.getElementById("sp-current-file-desktop-btn");
     const currentFileCheckoutBtn = document.getElementById("sp-current-file-checkout-btn");
     const inlineModalBackdrop = document.getElementById("sp-inline-modal-backdrop");
@@ -235,6 +235,16 @@
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
             e.preventDefault();
             submitInlineModal();
+        }
+    });
+    currentFileShareBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!currentPageFile) return;
+        try {
+            await navigator.clipboard.writeText(getViewFileUrl(currentPageFile.path));
+            showStatus("success", '🟢 Copied link to clipboard');
+        } catch (err) {
+            showStatus("error", '❌ Failed to copy link');
         }
     });
     currentFileCheckoutBtn.addEventListener("click", async (e) => {
@@ -707,21 +717,17 @@
         try {
             chrome.runtime.sendMessage({ action: "checkConnection" }, (response) => {
                 if (chrome.runtime.lastError) {
-                    connectionEl.textContent = "⚠ Could not check connection";
-                    connectionEl.style.color = "#ff9800";
+                    showStatus("error", "⚠ Could not check connection");
                     return;
                 }
                 if (response && response.connected) {
-                    connectionEl.textContent = "🟢 Connected to SharePoint";
-                    connectionEl.style.color = "#4caf50";
+                    showStatus("", "");
                 } else {
-                    connectionEl.textContent = "⚠ No SharePoint tab found. Please login first.";
-                    connectionEl.style.color = "#ff9800";
+                    showStatus("error", "⚠ No SharePoint tab found. Please login first.");
                 }
             });
         } catch (e) {
-            connectionEl.textContent = "⚠ Could not check connection";
-            connectionEl.style.color = "#ff9800";
+            showStatus("error", "⚠ Could not check connection");
         }
     }
 
@@ -981,7 +987,18 @@
                 '<div class="sp-file-actions">' +
                 (canOpenInDesktopApp(file) ? '<button class="sp-action-btn sp-action-desktop" title="Open in desktop app">🖥️</button>' : '') +
                 '<button class="sp-action-btn sp-action-checkout" title="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '">' + getCheckoutActionIcon(file.isCheckedOut) + '</button>' +
+                '<button class="sp-action-btn sp-action-share" title="Copy share link">🔗</button>' +
                 '</div>';
+
+            item.querySelector(".sp-action-share").addEventListener("click", async (e) => {
+                e.stopPropagation();
+                try {
+                    await navigator.clipboard.writeText(viewFileUrl);
+                    showStatus("success", '🟢 Copied link to clipboard');
+                } catch (err) {
+                    showStatus("error", '❌ Failed to copy link');
+                }
+            });
 
             const desktopBtn = item.querySelector(".sp-action-desktop");
             if (desktopBtn) {
@@ -1214,14 +1231,35 @@
     // ============================================
     // Utility Functions
     // ============================================
+    let statusTimeout = null;
     function showStatus(type, message) {
-        if (!type && !message) { statusEl.className = "sp-status sp-hidden"; return; }
-        statusEl.className = "sp-status sp-" + type;
-        statusEl.innerHTML = type === "loading"
-            ? '<span class="sp-spinner"></span> ' + message
+        if (statusTimeout) {
+            clearTimeout(statusTimeout);
+            statusTimeout = null;
+        }
+
+        if (!type && !message) { 
+            connectionEl.innerHTML = ""; 
+            connectionEl.style.color = "var(--sp-text-secondary)";
+            return; 
+        }
+        
+        let color = "var(--sp-text-secondary)";
+        if (type === "error") color = "#f87171";
+        else if (type === "success") color = "#4ade80";
+        else if (type === "loading") color = "var(--sp-text-primary)";
+        
+        connectionEl.style.color = color;
+        connectionEl.innerHTML = type === "loading"
+            ? '<span class="sp-spinner" style="margin-right: 8px; width: 10px; height: 10px; border-width: 2px;"></span>' + message
             : message;
-        if (!message) statusEl.classList.add("sp-hidden");
-        else statusEl.classList.remove("sp-hidden");
+            
+        if (type !== "loading" && message) {
+            statusTimeout = setTimeout(() => {
+                connectionEl.innerHTML = "";
+                connectionEl.style.color = "var(--sp-text-secondary)";
+            }, 5000);
+        }
     }
 
     function showSettingsStatus(type, message) {
