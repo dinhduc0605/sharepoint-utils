@@ -18,6 +18,6 @@
         "service_worker": "background.js"
     },
     "action": {
-        "default_title": "SharePoint File Search"
+        "default_title": "SharePoint Utils"
     }
 }

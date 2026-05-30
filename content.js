@@ -1,5 +1,5 @@
 // ============================================
-// SharePoint File Search - Content Script
+// SharePoint Utils - Content Script
 // Injected into the active tab to show a modal overlay
 // ============================================
 (function () {
@@ -34,7 +34,7 @@
     backdrop.innerHTML = `
         <div class="sp-search-modal" id="sp-search-modal">
             <div class="sp-search-header">
-                <span class="sp-search-header-icon">📂</span>
+                <span class="sp-search-header-icon">⚡</span>
                 <h2>SharePoint Utils</h2>
                 <button class="sp-search-close" id="sp-close-btn" title="Close (Esc)">✕</button>
             </div>
@@ -712,7 +712,7 @@
                     return;
                 }
                 if (response && response.connected) {
-                    connectionEl.textContent = "✅ Connected to SharePoint";
+                    connectionEl.textContent = "🟢 Connected to SharePoint";
                     connectionEl.style.color = "#4caf50";
                 } else {
                     connectionEl.textContent = "⚠ No SharePoint tab found. Please login first.";
@@ -960,7 +960,7 @@
             return;
         }
 
-        showStatus("success", '✅ Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"');
+        showStatus("success", '🟢 Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"');
 
         files.forEach(function (file) {
             const viewFileUrl = getViewFileUrl(file.path);
@@ -1017,7 +1017,7 @@
                 file.isCheckedOut = true;
                 buttonEl.textContent = getCheckoutActionIcon(true);
                 buttonEl.title = "Check in file";
-                showStatus("success", '✅ Checked out "' + escapeHtml(file.name) + '"');
+                showStatus("success", '🟢 Checked out "' + escapeHtml(file.name) + '"');
             } else {
                 const comment = await promptForCheckInComment(file.name);
                 if (comment === null) {
@@ -1028,7 +1028,7 @@
                 file.isCheckedOut = false;
                 buttonEl.textContent = getCheckoutActionIcon(false);
                 buttonEl.title = "Check out file";
-                showStatus("success", '✅ Checked in "' + escapeHtml(file.name) + '"');
+                showStatus("success", '🟢 Checked in "' + escapeHtml(file.name) + '"');
             }
             if (currentPageFile && currentPageFile.path === file.path) {
                 currentPageFile.isCheckedOut = file.isCheckedOut;
@@ -1326,10 +1326,7 @@
             : "";
         const segments = relativePath.split("/").filter(Boolean);
 
-        wrapper.appendChild(document.createTextNode(site || ""));
-
         if (segments.length === 0) {
-            wrapper.appendChild(document.createTextNode(" / "));
             wrapper.appendChild(createFolderLink("/", getFolderUrlFromFolderPath(parentFolderPath)));
             return wrapper;
         }
@@ -1337,7 +1334,9 @@
         let currentPath = "";
         segments.forEach(function (segment, index) {
             currentPath += "/" + segment;
-            wrapper.appendChild(document.createTextNode(index === 0 ? " / " : " / "));
+            if (index > 0) {
+                wrapper.appendChild(document.createTextNode(" / "));
+            }
             wrapper.appendChild(createFolderLink(segment, getFolderUrlFromFolderPath(libraryPath + currentPath)));
         });
 
