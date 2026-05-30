@@ -291,6 +291,13 @@
     padding: 8px 20px; text-align: center;
     border-top: 1px solid #f0f0f0; font-size: 11px; color: #999;
 }
+.sp-version {
+    font-size: 10px;
+    color: #c0c0c0;
+    font-family: 'Consolas', monospace;
+    letter-spacing: 0.3px;
+    user-select: none;
+}
 
 .sp-inline-modal-backdrop {
     position: absolute;
