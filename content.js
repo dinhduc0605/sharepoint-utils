@@ -1574,12 +1574,20 @@
         return site ? buildLibraryUrl(site) : "";
     }
 
+    const FILE_ICONS_SVG = {
+        word: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#2B579A"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="13" fill="#fff">W</text></svg>`,
+        excel: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#217346"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="13" fill="#fff">X</text></svg>`,
+        ppt: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#D24726"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="13" fill="#fff">P</text></svg>`,
+        pdf: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#E33B2E"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="#fff">PDF</text></svg>`,
+    };
+
     function getFileIcon(filename) {
-        const ext = filename.split(".").pop().toLowerCase();
-        const icons = {
-            pdf: "📕", doc: "📘", docx: "📘",
-            xls: "📗", xlsx: "📗", csv: "📗",
-            ppt: "📙", pptx: "📙",
+        const ext = (filename || "").split(".").pop().toLowerCase();
+        if (["doc", "docx", "dot", "dotx"].includes(ext)) return FILE_ICONS_SVG.word;
+        if (["xls", "xlsx", "xlsm", "xlsb", "csv"].includes(ext)) return FILE_ICONS_SVG.excel;
+        if (["ppt", "pptx", "pptm", "pps", "ppsx"].includes(ext)) return FILE_ICONS_SVG.ppt;
+        if (ext === "pdf") return FILE_ICONS_SVG.pdf;
+        const emojiIcons = {
             txt: "📄", md: "📄", json: "📄", xml: "📄",
             jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", svg: "🖼️",
             mp4: "🎬", avi: "🎬", mov: "🎬",
@@ -1588,7 +1596,7 @@
             html: "🌐", css: "🎨", js: "⚡",
             py: "🐍", java: "☕", sql: "🗃️"
         };
-        return icons[ext] || "📄";
+        return emojiIcons[ext] || "📄";
     }
 
     function formatFileSize(bytes) {
