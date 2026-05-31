@@ -136,7 +136,7 @@
 
             <div class="sp-footer" style="display:flex; align-items:center; justify-content:space-between;">
                 <span id="sp-connection-status">⏳ Checking connection...</span>
-                <span class="sp-version">v1.0</span>
+                <span class="sp-version">v1.1</span>
             </div>
         </div>
         <div class="sp-inline-modal-backdrop sp-hidden" id="sp-inline-modal-backdrop">
