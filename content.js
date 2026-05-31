@@ -152,6 +152,17 @@
                 </div>
             </div>
         </div>
+        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-share-modal-backdrop">
+            <div class="sp-inline-modal" id="sp-share-modal" role="dialog" aria-modal="true">
+                <div class="sp-inline-modal-title">Share Options</div>
+                <div class="sp-inline-modal-subtitle" id="sp-share-modal-filename" style="word-break: break-all;"></div>
+                <div class="sp-inline-modal-actions" style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-share-link-btn" style="width:100%; text-align:left; justify-content:flex-start;">🔗 Share Link (URL only)</button>
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-share-backlog-btn" style="width:100%; text-align:left; justify-content:flex-start;">📝 Backlog Format [Name](URL)</button>
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-primary" id="sp-share-cancel-btn" style="width:100%; margin-top:8px; justify-content:center; display:flex;">Cancel</button>
+                </div>
+            </div>
+        </div>
     `;
 
     document.body.appendChild(backdrop);
@@ -188,6 +199,16 @@
     const inlineModalTextarea = document.getElementById("sp-inline-modal-textarea");
     const inlineModalCancelBtn = document.getElementById("sp-inline-modal-cancel-btn");
     const inlineModalOkBtn = document.getElementById("sp-inline-modal-ok-btn");
+    
+    const shareModalBackdrop = document.getElementById("sp-share-modal-backdrop");
+    const shareModal = document.getElementById("sp-share-modal");
+    const shareModalFilename = document.getElementById("sp-share-modal-filename");
+    const shareLinkBtn = document.getElementById("sp-share-link-btn");
+    const shareBacklogBtn = document.getElementById("sp-share-backlog-btn");
+    const shareCancelBtn = document.getElementById("sp-share-cancel-btn");
+    let activeShareFile = null;
+    let activeShareUrl = null;
+
     const CHECKOUT_ICON = "📝";
     const CHECKIN_ICON = "✅";
     let activeInlineModal = null;
@@ -224,6 +245,10 @@
             closeInlineModal(false);
             return;
         }
+        if (e.key === "Escape" && activeShareFile) {
+            closeShareModal();
+            return;
+        }
         if (e.key === "Escape" && document.getElementById("sp-search-backdrop")) closeModal();
     });
     modal.addEventListener("click", (e) => e.stopPropagation());
@@ -237,15 +262,38 @@
             submitInlineModal();
         }
     });
-    currentFileShareBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        if (!currentPageFile) return;
+
+    shareModal.addEventListener("click", (e) => e.stopPropagation());
+    shareModalBackdrop.addEventListener("click", () => closeShareModal());
+    shareCancelBtn.addEventListener("click", () => closeShareModal());
+    shareLinkBtn.addEventListener("click", async () => {
+        if (!activeShareUrl) return;
         try {
-            await navigator.clipboard.writeText(getViewFileUrl(currentPageFile.path));
+            const encodedUrl = encodeURI(activeShareUrl);
+            await navigator.clipboard.writeText(encodedUrl);
             showStatus("success", '🟢 Copied link to clipboard');
         } catch (err) {
             showStatus("error", '❌ Failed to copy link');
         }
+        closeShareModal();
+    });
+    shareBacklogBtn.addEventListener("click", async () => {
+        if (!activeShareUrl || !activeShareFile) return;
+        try {
+            const encodedUrl = encodeURI(activeShareUrl);
+            const text = `[${activeShareFile.name}](${encodedUrl})`;
+            await navigator.clipboard.writeText(text);
+            showStatus("success", '🟢 Copied backlog format to clipboard');
+        } catch (err) {
+            showStatus("error", '❌ Failed to copy backlog format');
+        }
+        closeShareModal();
+    });
+
+    currentFileShareBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!currentPageFile) return;
+        openShareModal(currentPageFile, getViewFileUrl(currentPageFile.path));
     });
     currentFileCheckoutBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -992,12 +1040,7 @@
 
             item.querySelector(".sp-action-share").addEventListener("click", async (e) => {
                 e.stopPropagation();
-                try {
-                    await navigator.clipboard.writeText(viewFileUrl);
-                    showStatus("success", '🟢 Copied link to clipboard');
-                } catch (err) {
-                    showStatus("error", '❌ Failed to copy link');
-                }
+                openShareModal(file, viewFileUrl);
             });
 
             const desktopBtn = item.querySelector(".sp-action-desktop");
@@ -1125,6 +1168,19 @@
         if (resolver) {
             resolver(submitted ? value : null);
         }
+    }
+
+    function openShareModal(file, url) {
+        activeShareFile = file;
+        activeShareUrl = url;
+        shareModalFilename.textContent = file.name;
+        shareModalBackdrop.classList.remove("sp-hidden");
+    }
+
+    function closeShareModal() {
+        activeShareFile = null;
+        activeShareUrl = null;
+        shareModalBackdrop.classList.add("sp-hidden");
     }
 
     function renderCurrentPageFile() {
