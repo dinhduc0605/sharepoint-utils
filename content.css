@@ -390,10 +390,18 @@
     color: var(--sp-accent); 
     border-bottom-style: solid;
 }
-.sp-file-size { 
-    font-size: 11px; 
-    color: var(--sp-text-muted); 
-    margin-top: 2px; 
+.sp-file-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+.sp-file-size, .sp-file-editor, .sp-file-modified {
+    font-size: 11px;
+    color: var(--sp-text-muted);
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
 }
 .sp-file-actions { 
     display: grid; 

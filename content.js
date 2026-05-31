@@ -43,6 +43,7 @@
                 <div class="sp-current-file-info">
                     <div class="sp-current-file-name" id="sp-current-file-name"></div>
                     <div class="sp-file-path" id="sp-current-file-path"></div>
+                    <div class="sp-file-meta" id="sp-current-file-meta"></div>
                 </div>
                 <div class="sp-file-actions">
                     <button class="sp-action-btn sp-action-desktop" id="sp-current-file-desktop-btn" title="Open in desktop app">🖥️</button>
@@ -190,6 +191,7 @@
     const currentFileEl = document.getElementById("sp-current-file");
     const currentFileNameEl = document.getElementById("sp-current-file-name");
     const currentFilePathEl = document.getElementById("sp-current-file-path");
+    const currentFileMetaEl = document.getElementById("sp-current-file-meta");
     const currentFileShareBtn = document.getElementById("sp-current-file-share-btn");
     const currentFileDesktopBtn = document.getElementById("sp-current-file-desktop-btn");
     const currentFileCheckoutBtn = document.getElementById("sp-current-file-checkout-btn");
@@ -801,6 +803,7 @@
                     file.size = parseInt(details.Length || 0, 10);
                     file.modified = details.TimeLastModified || "";
                     file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
+                    file.editor = details.ModifiedBy?.Title || "";
                 }
             }
         } catch (e) {
@@ -926,6 +929,7 @@
                 siteUrl: buildSiteUrl(matchedSiteConfig.site),
                 size: parseInt(getVal("Size") || "0", 10),
                 modified: getVal("LastModifiedTime") || "",
+                editor: getVal("EditorOWSUSER") || "",
                 isCheckedOut: false
             });
         });
@@ -1030,7 +1034,11 @@
                 '<div class="sp-file-info">' +
                 '<div class="sp-file-name">' + highlightText(escapeHtml(file.name), query) + '</div>' +
                 '<div class="sp-file-path"></div>' +
-                (file.size ? '<div class="sp-file-size">' + formatFileSize(file.size) + '</div>' : '') +
+                '<div class="sp-file-meta">' +
+                (file.size ? '<span class="sp-file-size">💾 ' + formatFileSize(file.size) + '</span>' : '') +
+                (file.editor ? '<span class="sp-file-editor">👤 ' + escapeHtml(formatEditorName(file.editor)) + '</span>' : '') +
+                (file.modified ? '<span class="sp-file-modified">🕒 ' + escapeHtml(formatDate(file.modified)) + '</span>' : '') +
+                '</div>' +
                 '</div>' +
                 '<div class="sp-file-actions">' +
                 (canOpenInDesktopApp(file) ? '<button class="sp-action-btn sp-action-desktop" title="Open in desktop app">🖥️</button>' : '') +
@@ -1195,6 +1203,12 @@
         currentFileNameEl.textContent = currentPageFile.name;
         currentFilePathEl.innerHTML = "";
         currentFilePathEl.appendChild(buildFolderBreadcrumb(currentPageFile));
+        
+        currentFileMetaEl.innerHTML = 
+            (currentPageFile.size ? '<span class="sp-file-size">💾 ' + formatFileSize(currentPageFile.size) + '</span>' : '') +
+            (currentPageFile.editor ? '<span class="sp-file-editor">👤 ' + escapeHtml(formatEditorName(currentPageFile.editor)) + '</span>' : '') +
+            (currentPageFile.modified ? '<span class="sp-file-modified">🕒 ' + escapeHtml(formatDate(currentPageFile.modified)) + '</span>' : '');
+
         currentFileDesktopBtn.classList.toggle("sp-hidden", !canOpenInDesktopApp(currentPageFile));
         currentFileCheckoutBtn.textContent = getCheckoutActionIcon(currentPageFile.isCheckedOut);
         currentFileCheckoutBtn.title = currentPageFile.isCheckedOut ? "Check in file" : "Check out file";
@@ -1461,7 +1475,7 @@
     }
 
     function getCurrentPageFileDetailsUrl(file) {
-        const select = "?$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType";
+        const select = "?$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType,ModifiedBy/Title&$expand=ModifiedBy";
         if (file.sourceDocId && file.siteUrl) {
             return file.siteUrl + "/_api/web/GetFileById(guid'" + encodeODataString(file.sourceDocId) + "')" + select;
         }
@@ -1599,5 +1613,28 @@
 
     function escapeRegex(str) {
         return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function formatEditorName(raw) {
+        if (!raw) return "";
+        const parts = String(raw).split("|");
+        for (let part of parts) {
+            const trimmed = part.trim();
+            if (trimmed && !trimmed.includes("@") && !trimmed.includes("i:0#.f")) {
+                return trimmed;
+            }
+        }
+        return parts.length > 1 ? parts[1].trim() : parts[0].trim();
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) return "";
+        try {
+            const d = new Date(dateString);
+            if (isNaN(d.getTime())) return dateString;
+            return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch(e) {
+            return dateString;
+        }
     }
 })();
