@@ -47,6 +47,7 @@
     border: 1px solid var(--sp-border);
     width: 860px;
     max-width: 92vw;
+    height: 80vh;
     max-height: 80vh;
     position: relative;
     display: flex;
@@ -94,6 +95,30 @@
     border-color: transparent;
 }
 
+/* Settings icon button in header */
+.sp-settings-icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    font-size: 16px;
+    color: var(--sp-text-secondary);
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 8px;
+    line-height: 1;
+    transition: var(--sp-transition);
+    margin-right: 4px;
+}
+.sp-settings-icon-btn:hover {
+    background: var(--sp-bg-hover);
+    color: var(--sp-text-primary);
+    border-color: transparent;
+}
+.sp-settings-icon-btn.sp-active {
+    background: var(--sp-bg-hover);
+    color: var(--sp-text-primary);
+    border-color: var(--sp-border-hover);
+}
+
 /* Current active file banner */
 .sp-current-file {
     display: flex;
@@ -136,54 +161,48 @@
     gap: 4px;
 }
 
-/* Tab Bar styled as a Segmented Control */
-.sp-tab-bar {
+
+/* Search Panel always visible */
+.sp-search-panel {
     display: flex;
-    padding: 6px;
-    margin: 12px 24px 4px 24px;
-    background: var(--sp-bg-card);
-    border-radius: 10px;
-    border: 1px solid var(--sp-border);
-}
-.sp-tab-btn {
+    flex-direction: column;
     flex: 1;
-    padding: 8px 16px;
-    border: none;
-    background: transparent;
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--sp-text-secondary);
-    cursor: pointer;
-    border-radius: 6px;
-    transition: var(--sp-transition);
+    overflow: hidden;
+    position: relative;
+}
+
+/* Settings Overlay - covers content area inside modal */
+.sp-settings-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--sp-bg-modal);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    animation: sp-fadeIn 0.15s ease-out;
+    border-top: 1px solid var(--sp-border);
+}
+.sp-settings-overlay-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--sp-border);
+    background: rgba(24, 24, 27, 0.6);
+    flex-shrink: 0;
 }
-.sp-tab-btn:hover { 
-    color: var(--sp-text-primary); 
-    background: rgba(255, 255, 255, 0.03); 
-}
-.sp-tab-btn.sp-active {
-    color: var(--sp-accent);
-    background: var(--sp-bg-hover);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+.sp-settings-overlay-title {
+    font-size: 14px;
     font-weight: 600;
-}
-.sp-tab-panel { 
-    display: none; 
-    flex-direction: column; 
-    flex: 1; 
-    overflow: hidden; 
-}
-.sp-tab-panel.sp-active { 
-    display: flex; 
+    color: var(--sp-text-primary);
 }
 
 /* Search Tab Input & Filters */
 .sp-search-input-section { 
-    padding: 16px 24px; 
+    padding: 12px 24px; 
     border-bottom: 1px solid var(--sp-border); 
 }
 .sp-search-row { 
@@ -207,7 +226,7 @@
 .sp-search-input {
     width: 100%; 
     padding: 0 40px 0 42px;
-    height: 46px; 
+    height: 40px; 
     box-sizing: border-box;
     background: var(--sp-bg-card);
     border: 1px solid var(--sp-border); 
@@ -245,40 +264,28 @@
     display: block; 
 }
 
-/* Modern Filter Panel */
-.sp-search-filters-row { 
-    display: flex; 
-    gap: 12px; 
-    align-items: stretch; 
-    margin-top: 14px; 
-    flex-direction: row; 
+/* Inline Filters (same row as search) */
+.sp-inline-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
 }
-.sp-filter-group { 
-    flex: 1; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 5px; 
-    min-width: 0; 
-}
-.sp-filter-label { 
-    font-size: 10px; 
-    font-weight: 600; 
-    color: var(--sp-text-secondary); 
-    text-transform: uppercase; 
-    letter-spacing: 0.05em; 
+.sp-filter-inline {
+    height: 40px;
+    width: 110px;
+    padding: 0 28px 0 10px;
+    font-size: 12px;
 }
 .sp-filter-select {
-    width: 100%;
     min-width: 0;
-    padding: 6px 32px 6px 12px;
-    height: 36px; 
     box-sizing: border-box;
     border: 1px solid var(--sp-border);
     border-radius: 8px;
     font-size: 13px;
     color: var(--sp-text-primary);
     outline: none;
-    background: var(--sp-bg-card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23a1a1aa' d='M1.41 0L6 4.58 10.59 0 12 1.41l-6 6-6-6z'/%3E%3C/svg%3E") no-repeat right 12px center;
+    background: var(--sp-bg-card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23a1a1aa' d='M1.41 0L6 4.58 10.59 0 12 1.41l-6 6-6-6z'/%3E%3C/svg%3E") no-repeat right 10px center;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -293,11 +300,6 @@
 .sp-filter-select:hover { 
     border-color: var(--sp-border-hover); 
     background-color: var(--sp-bg-hover);
-}
-.sp-search-hint { 
-    font-size: 11px; 
-    color: var(--sp-text-muted); 
-    margin-top: 8px; 
 }
 
 /* Status Notifications */
@@ -460,6 +462,47 @@
 .sp-no-results-text { 
     font-size: 13px; 
 }
+
+/* Search empty state (shown before any search) */
+.sp-search-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    padding: 40px 24px;
+    text-align: center;
+    gap: 10px;
+    opacity: 0.7;
+}
+.sp-search-empty-icon {
+    font-size: 36px;
+    margin-bottom: 4px;
+    filter: grayscale(0.3);
+}
+.sp-search-empty-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--sp-text-primary);
+}
+.sp-search-empty-hint {
+    font-size: 12px;
+    color: var(--sp-text-secondary);
+    max-width: 340px;
+    line-height: 1.6;
+}
+.sp-search-empty-hint kbd {
+    display: inline-block;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+    background: var(--sp-bg-card);
+    border: 1px solid var(--sp-border-hover);
+    border-radius: 5px;
+    color: var(--sp-text-primary);
+    box-shadow: 0 1px 0 var(--sp-border-hover);
+}
+
 
 /* Settings Tab Styling */
 .sp-settings-content { 

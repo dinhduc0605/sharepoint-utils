@@ -36,6 +36,7 @@
             <div class="sp-search-header">
                 <span class="sp-search-header-icon">⚡</span>
                 <h2>SharePoint Utils</h2>
+                <button class="sp-settings-icon-btn" id="sp-settings-icon-btn" title="Settings">⚙️</button>
                 <button class="sp-search-close" id="sp-close-btn" title="Close (Esc)">✕</button>
             </div>
 
@@ -52,38 +53,21 @@
                 </div>
             </div>
 
-            <!-- Tab Bar -->
-            <div class="sp-tab-bar">
-                <button class="sp-tab-btn sp-active" data-tab="search">🔍 Search</button>
-                <button class="sp-tab-btn" data-tab="settings">⚙️ Settings</button>
-            </div>
-
-            <!-- Search Tab -->
-            <div class="sp-tab-panel sp-active" id="sp-tab-search">
+            <!-- Search Panel (always visible) -->
+            <div class="sp-search-panel" id="sp-tab-search">
                 <div class="sp-search-input-section">
                     <div class="sp-search-row">
                         <div class="sp-search-input-wrap">
                             <span class="sp-search-icon">🔍</span>
-                            <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename (at least 3 characters)" autocomplete="off">
+                            <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename and press Enter…" autocomplete="off">
                             <button class="sp-clear-btn" id="sp-clear-btn" title="Clear">✕</button>
                         </div>
-                    </div>
-                    <div class="sp-search-filters-row">
-                        <div class="sp-filter-group">
-                            <label class="sp-filter-label" for="sp-site-filter-select">Site</label>
-                            <select class="sp-filter-select" id="sp-site-filter-select" title="Filter by site">
-                                <option value="">All sites</option>
-                            </select>
-                        </div>
-                        <div class="sp-filter-group">
-                            <label class="sp-filter-label" for="sp-folder-filter-select">Folder</label>
-                            <select class="sp-filter-select" id="sp-folder-filter-select" title="Filter by subfolder">
+                        <div class="sp-inline-filters">
+                            <select class="sp-filter-select sp-filter-inline" id="sp-site-filter-select" title="Filter by site"></select>
+                            <select class="sp-filter-select sp-filter-inline" id="sp-folder-filter-select" title="Filter by subfolder">
                                 <option value="">All folders</option>
                             </select>
-                        </div>
-                        <div class="sp-filter-group">
-                            <label class="sp-filter-label" for="sp-type-filter-select">Type</label>
-                            <select class="sp-filter-select" id="sp-type-filter-select" title="Filter by file type">
+                            <select class="sp-filter-select sp-filter-inline" id="sp-type-filter-select" title="Filter by file type">
                                 <option value="">All types</option>
                                 <option value="excel">Excel</option>
                                 <option value="word">Word</option>
@@ -94,11 +78,21 @@
                         </div>
                     </div>
                 </div>
-                <div class="sp-results" id="sp-results"></div>
+                <div class="sp-results" id="sp-results">
+                    <div class="sp-search-empty-state" id="sp-search-empty-state">
+                        <div class="sp-search-empty-icon">🔍</div>
+                        <div class="sp-search-empty-title">Search for a file</div>
+                        <div class="sp-search-empty-hint">Type a filename and press <kbd>Enter</kbd> to search across your SharePoint sites</div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Settings Tab -->
-            <div class="sp-tab-panel" id="sp-tab-settings">
+            <!-- Settings Modal Overlay (inside the main modal) -->
+            <div class="sp-settings-overlay sp-hidden" id="sp-settings-overlay">
+                <div class="sp-settings-overlay-header">
+                    <span class="sp-settings-overlay-title">⚙️ Settings</span>
+                    <button class="sp-search-close" id="sp-settings-close-btn" title="Close Settings">✕</button>
+                </div>
                 <div class="sp-settings-content">
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Add Site</div>
@@ -131,6 +125,10 @@
                         </div>
                     </div>
                     <div class="sp-status sp-hidden" id="sp-settings-status"></div>
+                </div>
+                <div class="sp-footer" style="display:flex; align-items:center; justify-content:space-between;">
+                    <span id="sp-settings-connection-status"></span>
+                    <span class="sp-version">v1.1</span>
                 </div>
             </div>
 
@@ -218,22 +216,32 @@
     const siteFilterSelect = document.getElementById("sp-site-filter-select");
     const folderFilterSelect = document.getElementById("sp-folder-filter-select");
     const fileTypeFilterSelect = document.getElementById("sp-type-filter-select");
-    const tabBtns = backdrop.querySelectorAll(".sp-tab-btn");
-    const tabPanels = backdrop.querySelectorAll(".sp-tab-panel");
+    const settingsIconBtn = document.getElementById("sp-settings-icon-btn");
+    const settingsOverlay = document.getElementById("sp-settings-overlay");
+    const settingsCloseBtn = document.getElementById("sp-settings-close-btn");
 
     // ============================================
-    // Tab Switching
+    // Settings Overlay Open/Close
     // ============================================
-    tabBtns.forEach(btn => {
-        btn.addEventListener("click", () => {
-            const tabId = btn.dataset.tab;
-            tabBtns.forEach(b => b.classList.remove("sp-active"));
-            tabPanels.forEach(p => p.classList.remove("sp-active"));
-            btn.classList.add("sp-active");
-            document.getElementById("sp-tab-" + tabId).classList.add("sp-active");
-            if (tabId === "search") searchInput.focus();
-        });
+    function openSettingsOverlay() {
+        settingsOverlay.classList.remove("sp-hidden");
+        settingsIconBtn.classList.add("sp-active");
+        const settingsConnEl = document.getElementById("sp-settings-connection-status");
+        if (settingsConnEl) settingsConnEl.textContent = connectionEl.textContent;
+    }
+    function closeSettingsOverlay() {
+        settingsOverlay.classList.add("sp-hidden");
+        settingsIconBtn.classList.remove("sp-active");
+        searchInput.focus();
+    }
+    settingsIconBtn.addEventListener("click", () => {
+        if (settingsOverlay.classList.contains("sp-hidden")) {
+            openSettingsOverlay();
+        } else {
+            closeSettingsOverlay();
+        }
     });
+    settingsCloseBtn.addEventListener("click", closeSettingsOverlay);
 
     // ============================================
     // Events
@@ -249,6 +257,10 @@
         }
         if (e.key === "Escape" && activeShareFile) {
             closeShareModal();
+            return;
+        }
+        if (e.key === "Escape" && !settingsOverlay.classList.contains("sp-hidden")) {
+            closeSettingsOverlay();
             return;
         }
         if (e.key === "Escape" && document.getElementById("sp-search-backdrop")) closeModal();
@@ -314,7 +326,7 @@
         const val = searchInput.value;
         clearBtn.classList.toggle("sp-visible", val.length > 0);
         if (val.trim().length === 0) {
-            resultsEl.innerHTML = "";
+            showEmptyState();
             showStatus("", "");
             lastSearchResults = [];
             lastQuery = "";
@@ -330,7 +342,7 @@
     clearBtn.addEventListener("click", () => {
         searchInput.value = "";
         clearBtn.classList.remove("sp-visible");
-        resultsEl.innerHTML = "";
+        showEmptyState();
         showStatus("", "");
         lastSearchResults = [];
         lastQuery = "";
@@ -1005,7 +1017,23 @@
     // ============================================
     // Display Results
     // ============================================
+    function showEmptyState() {
+        resultsEl.innerHTML = '';
+        const el = document.createElement('div');
+        el.className = 'sp-search-empty-state';
+        el.id = 'sp-search-empty-state';
+        el.innerHTML = '<div class="sp-search-empty-icon">🔍</div>' +
+            '<div class="sp-search-empty-title">Search for a file</div>' +
+            '<div class="sp-search-empty-hint">Type a filename and press <kbd>Enter</kbd> to search across your SharePoint sites</div>';
+        resultsEl.appendChild(el);
+    }
+    function hideEmptyState() {
+        const el = document.getElementById('sp-search-empty-state');
+        if (el) el.remove();
+    }
+
     function displayResults(files, query) {
+        hideEmptyState();
         resultsEl.innerHTML = "";
 
         if (files.length === 0) {
