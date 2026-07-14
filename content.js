@@ -34,7 +34,7 @@
     backdrop.innerHTML = `
         <div class="sp-search-modal" id="sp-search-modal">
             <div class="sp-search-header">
-                <span class="sp-search-header-icon">⚡</span>
+                <img src="${chrome.runtime.getURL('icons/icon32.png')}" class="sp-search-header-icon" alt="S">
                 <h2>SharePoint Utils</h2>
                 <button class="sp-settings-icon-btn" id="sp-settings-icon-btn" title="Settings">⚙️</button>
                 <button class="sp-search-close" id="sp-close-btn" title="Close (Esc)">✕</button>
