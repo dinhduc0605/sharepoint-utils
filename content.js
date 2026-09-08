@@ -50,6 +50,7 @@
     let recentFiles = [];
     let recentSearches = [];
     let savedSearches = [];
+    let syncEnabled = false;
     let currentPageFile = null;
 
     // ============================================
@@ -148,6 +149,19 @@
                             <div class="sp-path-list-empty">No sites added yet.</div>
                         </div>
                     </div>
+                    <div class="sp-settings-section sp-settings-backup-section">
+                        <div class="sp-settings-label">Backup & Sync</div>
+                        <label class="sp-sync-toggle">
+                            <input type="checkbox" id="sp-sync-config-toggle">
+                            <span>Sync sites and folders across Chrome</span>
+                        </label>
+                        <div class="sp-backup-actions">
+                            <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-export-config-btn">Export JSON</button>
+                            <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-import-config-btn">Import JSON</button>
+                            <input type="file" id="sp-import-config-input" accept="application/json,.json" class="sp-file-input-hidden">
+                        </div>
+                        <div class="sp-refresh-hint">Export creates a portable backup of sites, libraries, folders, and the default site.</div>
+                    </div>
                     <div class="sp-refresh-hint" id="sp-selected-library-hint"></div>
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Add Subfolder</div>
@@ -215,6 +229,10 @@
     const addSiteBtn = document.getElementById("sp-add-site-btn");
     const currentSiteBtn = document.getElementById("sp-current-site-btn");
     const siteListEl = document.getElementById("sp-site-list");
+    const syncConfigToggle = document.getElementById("sp-sync-config-toggle");
+    const exportConfigBtn = document.getElementById("sp-export-config-btn");
+    const importConfigBtn = document.getElementById("sp-import-config-btn");
+    const importConfigInput = document.getElementById("sp-import-config-input");
     const selectedLibraryHintEl = document.getElementById("sp-selected-library-hint");
     const pathInput = document.getElementById("sp-path-input");
     const addPathBtn = document.getElementById("sp-add-path-btn");
@@ -287,6 +305,10 @@
     });
     settingsCloseBtn.addEventListener("click", closeSettingsOverlay);
     saveSearchBtn.addEventListener("click", saveCurrentSearch);
+    syncConfigToggle.addEventListener("change", toggleConfigSync);
+    exportConfigBtn.addEventListener("click", exportConfig);
+    importConfigBtn.addEventListener("click", () => importConfigInput.click());
+    importConfigInput.addEventListener("change", importConfigFromFile);
 
     // ============================================
     // Events
@@ -900,18 +922,117 @@
     // ============================================
     // Persistent Storage
     // ============================================
-    function saveSiteConfigs() { chrome.storage.local.set({ siteConfigs, defaultSite }); }
+    const CONFIG_SYNC_KEYS = ["siteConfigs", "defaultSite", "syncEnabled"];
+
+    function getConfigPayload() {
+        return { siteConfigs, defaultSite };
+    }
+
+    function saveSiteConfigs() {
+        chrome.storage.local.set({ ...getConfigPayload(), syncEnabled });
+        if (syncEnabled) {
+            chrome.storage.sync.set({ ...getConfigPayload(), syncEnabled: true }).catch(function (error) {
+                console.warn("Could not sync SharePoint configuration:", error);
+                showSettingsStatus("error", "❌ Could not sync configuration");
+            });
+        }
+    }
 
     function saveUserPreferences() {
         chrome.storage.local.set({ favoriteFiles, recentFiles, recentSearches, savedSearches });
+    }
+
+    async function toggleConfigSync() {
+        syncEnabled = syncConfigToggle.checked;
+        syncConfigToggle.disabled = true;
+        try {
+            if (syncEnabled) {
+                await chrome.storage.sync.set({ ...getConfigPayload(), syncEnabled: true });
+                chrome.storage.local.set({ syncEnabled: true });
+                showSettingsStatus("success", "🟢 Configuration sync enabled");
+            } else {
+                await chrome.storage.sync.set({ syncEnabled: false });
+                chrome.storage.local.set({ syncEnabled: false });
+                showSettingsStatus("success", "🟢 Configuration sync disabled");
+            }
+        } catch (error) {
+            syncEnabled = !syncEnabled;
+            syncConfigToggle.checked = syncEnabled;
+            showSettingsStatus("error", "❌ Could not update configuration sync");
+        } finally {
+            syncConfigToggle.disabled = false;
+        }
+    }
+
+    function exportConfig() {
+        const payload = {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            ...getConfigPayload()
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "sharepoint-utils-config.json";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        showSettingsStatus("success", "🟢 Configuration exported");
+    }
+
+    async function importConfigFromFile(event) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+
+        try {
+            const payload = JSON.parse(await file.text());
+            if (!Array.isArray(payload.siteConfigs) || payload.siteConfigs.length === 0) {
+                throw new Error("The file does not contain any site configurations");
+            }
+
+            const importedConfigs = payload.siteConfigs
+                .slice(0, 100)
+                .map(normalizeSiteConfig)
+                .filter(Boolean);
+            if (importedConfigs.length === 0) {
+                throw new Error("No valid site configurations were found");
+            }
+
+            siteConfigs = importedConfigs;
+            defaultSite = normalizeSiteInput(payload.defaultSite) || "";
+            ensureDefaultSite();
+            saveSiteConfigs();
+            renderSiteList();
+            renderPathList();
+            updateSearchFilterOptions();
+            updateSelectedLibraryHint();
+            showSettingsStatus("success", "🟢 Imported " + importedConfigs.length + " site configuration(s)");
+        } catch (error) {
+            showSettingsStatus("error", "❌ Import failed: " + escapeHtml(error.message));
+        }
     }
 
     async function restoreState() {
         try {
             const data = await chrome.storage.local.get([
                 "siteConfigs", "searchPaths", "configUrl", "defaultSite",
-                "favoriteFiles", "recentFiles", "recentSearches", "savedSearches"
+                "favoriteFiles", "recentFiles", "recentSearches", "savedSearches", "syncEnabled"
             ]);
+
+            syncEnabled = data.syncEnabled === true;
+            try {
+                const syncedData = await chrome.storage.sync.get(CONFIG_SYNC_KEYS);
+                syncEnabled = syncEnabled || syncedData.syncEnabled === true;
+                if (syncEnabled && Array.isArray(syncedData.siteConfigs) && syncedData.siteConfigs.length > 0) {
+                    data.siteConfigs = syncedData.siteConfigs;
+                    data.defaultSite = syncedData.defaultSite;
+                }
+            } catch (error) {
+                console.warn("Could not restore synced SharePoint configuration:", error);
+            }
 
             favoriteFiles = Array.isArray(data.favoriteFiles)
                 ? data.favoriteFiles.filter(file => file?.path && file?.name).slice(0, 50)
@@ -947,6 +1068,7 @@
             defaultSite = normalizeSiteInput(data.defaultSite) || "";
             ensureDefaultSite();
             saveSiteConfigs();
+            syncConfigToggle.checked = syncEnabled;
             renderSiteList();
             renderPathList();
             updateSearchFilterOptions();

@@ -796,6 +796,32 @@
     margin-top: 6px; 
     text-align: center; 
 }
+.sp-settings-backup-section {
+    padding: 14px;
+    border: 1px solid var(--sp-border);
+    border-radius: 10px;
+    background: rgba(24, 24, 27, 0.35);
+}
+.sp-sync-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--sp-text-primary);
+    font-size: 12px;
+    cursor: pointer;
+}
+.sp-sync-toggle input {
+    accent-color: var(--sp-accent);
+    cursor: pointer;
+}
+.sp-backup-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+.sp-file-input-hidden {
+    display: none !important;
+}
 
 /* Footer Section */
 .sp-footer {

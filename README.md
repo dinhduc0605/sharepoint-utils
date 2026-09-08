@@ -52,6 +52,10 @@ SharePoint Utils は、SharePoint のドキュメントライブラリ内のフ�
   - 登録済みサイトの一覧です。
   - ラジオボタンでデフォルトサイトを選択します。フォルダ追加・編集対象と Search タブの初期 Site フィルターに使われます。
   - 🗑️ 削除: サイトとそのサイト配下のサブフォルダ設定を削除します。
+- **Backup & Sync**:
+  - `Export JSON` でサイト、ライブラリ、サブフォルダ、デフォルトサイトをバックアップできます。
+  - `Import JSON` でバックアップを復元できます。現在のサイト設定はインポート内容で置き換わります。
+  - `Sync sites and folders across Chrome` を有効にすると、Chrome の `storage.sync` を使って同じ Chrome プロフィール間で設定を同期します。
 - **Add Subfolder (サブフォルダの追加)**:
   - デフォルトサイトのサブフォルダ (例: `/Reports/2024`) を入力し、`+ Add` ボタンを押します。
   - SharePoint のフォルダ URL をそのまま貼り付けても追加できます。
