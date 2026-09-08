@@ -945,8 +945,9 @@
             searchState = {
                 query: currentQuery,
                 selectedSite,
-                nextStartRow: searchPage.nextStartRow,
-                hasMore: searchPage.hasMore
+                sitePages: searchPage.sitePages,
+                hasMore: searchPage.hasMore,
+                errors: searchPage.errors
             };
             displayResults(applyFilter(lastSearchResults), currentQuery);
         } catch (error) {
@@ -965,7 +966,7 @@
         }
     }
 
-    async function searchFilesByName(query, selectedSite, startRow = 0) {
+    async function searchFilesByName(query, selectedSite, previousSitePages = []) {
         const rawQuery = String(query || "").replace(/["']/g, "").trim();
         const normalized = normalizeSearchInput(rawQuery);
         const searchTerms = normalized
@@ -973,7 +974,7 @@
             .filter(Boolean);
 
         if (searchTerms.length === 0) {
-            return [];
+            return { files: [], sitePages: [], hasMore: false, errors: [] };
         }
 
         let activeConfigs = siteConfigs;
@@ -981,29 +982,38 @@
             activeConfigs = siteConfigs.filter(c => c.site === selectedSite);
         }
 
-        const pathClauses = activeConfigs.map(function (siteConfig) {
-            return 'path:"' + buildLibraryUrl(siteConfig.site) + '"';
-        });
-
         // Exact logic from dist extension "title" mode
         const termClauses = searchTerms.map(function (term) {
             return "(Title:" + term + " OR Title:" + term + "* OR Filename:" + term + " OR Filename:" + term + "* OR FileLeafRef:" + term + " OR FileLeafRef:" + term + "*)";
         });
-
-        let queryText = termClauses.join(" ");
-        if (pathClauses.length > 0) {
-            queryText += " " + (pathClauses.length === 1 ? pathClauses[0] : "(" + pathClauses.join(" OR ") + ")");
-        }
-
-        // Use selected site URL as API base if available, otherwise fallback
-        const baseSite = selectedSite || (siteConfigs.length > 0 ? siteConfigs[0].site : null);
-        const siteUrl = baseSite ? buildSiteUrl(baseSite) : TENANT_ORIGIN;
-
-        const page = await fetchSearchRows(queryText, siteUrl, startRow);
-        const rows = page.rows;
+        const termQuery = termClauses.join(" ");
+        const priorPages = Array.isArray(previousSitePages) ? previousSitePages : [];
+        const requests = activeConfigs.map(function (siteConfig) {
+            const previousPage = priorPages.find(page => page.site === siteConfig.site);
+            const startRow = previousPage?.nextStartRow || 0;
+            const queryText = termQuery + ' path:"' + buildLibraryUrl(siteConfig) + '"';
+            return fetchSearchRows(queryText, buildSiteUrl(siteConfig), startRow)
+                .then(page => ({ siteConfig, page }));
+        });
+        const settled = await Promise.allSettled(requests);
+        const errors = [];
+        const sitePages = [];
         const uniqueFiles = new Map();
 
-        rows.forEach(function (row) {
+        settled.forEach(function (result, index) {
+            if (result.status === "rejected") {
+                errors.push({ site: activeConfigs[index].site, error: result.reason?.message || "Unknown error" });
+                return;
+            }
+            const siteConfig = result.value.siteConfig;
+            const page = result.value.page;
+            sitePages.push({
+                site: siteConfig.site,
+                nextStartRow: page.nextStartRow,
+                hasMore: page.hasMore
+            });
+
+            page.rows.forEach(function (row) {
             const cells = row.Cells?.results || [];
             const getVal = function (key) {
                 const cell = cells.find(function (item) { return item.Key === key; });
@@ -1020,7 +1030,7 @@
                 return;
             }
 
-            const matchedSiteConfig = getSiteConfigByServerRelativePath(relativePath);
+            const matchedSiteConfig = getSiteConfigByServerRelativePath(relativePath) || siteConfig;
             if (!matchedSiteConfig) {
                 return;
             }
@@ -1045,12 +1055,18 @@
                 editor: getVal("EditorOWSUSER") || "",
                 isCheckedOut: false
             });
+            });
         });
+
+        if (activeConfigs.length > 0 && errors.length === activeConfigs.length) {
+            throw new Error(errors[0].error);
+        }
 
         return {
             files: Array.from(uniqueFiles.values()),
-            nextStartRow: page.nextStartRow,
-            hasMore: page.hasMore
+            sitePages,
+            hasMore: sitePages.some(page => page.hasMore),
+            errors
         };
     }
 
@@ -1160,7 +1176,11 @@
             return;
         }
 
-        showStatus("success", '🟢 Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"');
+        const failedSiteCount = searchState?.errors?.length || 0;
+        const partialMessage = failedSiteCount
+            ? ' ⚠ ' + failedSiteCount + ' site(s) could not be searched.'
+            : '';
+        showStatus("success", '🟢 Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"' + partialMessage);
 
         files.forEach(function (file) {
             const viewFileUrl = getViewFileUrl(file.path);
@@ -1237,7 +1257,7 @@
             const searchPage = await searchFilesByName(
                 searchState.query,
                 searchState.selectedSite,
-                searchState.nextStartRow
+                searchState.sitePages
             );
             const existingPaths = new Set(lastSearchResults.map(file => file.path.toLowerCase()));
             searchPage.files.forEach(file => {
@@ -1246,8 +1266,9 @@
                     existingPaths.add(file.path.toLowerCase());
                 }
             });
-            searchState.nextStartRow = searchPage.nextStartRow;
+            searchState.sitePages = searchPage.sitePages;
             searchState.hasMore = searchPage.hasMore;
+            searchState.errors = (searchState.errors || []).concat(searchPage.errors || []);
             displayResults(applyFilter(lastSearchResults), searchState.query);
         } catch (error) {
             console.error("Load more error:", error);
