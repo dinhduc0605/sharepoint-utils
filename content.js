@@ -145,7 +145,7 @@
                             <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-import-config-btn">Import JSON</button>
                             <input type="file" id="sp-import-config-input" accept="application/json,.json" class="sp-file-input-hidden">
                         </div>
-                        <div class="sp-refresh-hint">When enabled, this device's current config is uploaded once; on later opens, synced config replaces local config.</div>
+                        <div class="sp-refresh-hint">If synced data already exists, enabling asks whether to keep Local or Chrome profile. Later opens use the synced configuration; local changes are copied back automatically.</div>
                         <div class="sp-refresh-hint">Export creates a portable backup of sites, libraries, folders, and the default site.</div>
                     </div>
                     <div class="sp-settings-section">
@@ -216,6 +216,20 @@
                 </div>
             </div>
         </div>
+        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-sync-modal-backdrop" aria-hidden="true">
+            <div class="sp-inline-modal" id="sp-sync-modal" role="dialog" aria-modal="true" aria-labelledby="sp-sync-modal-title" aria-describedby="sp-sync-modal-subtitle sp-sync-modal-warning">
+                <div class="sp-inline-modal-title" id="sp-sync-modal-title">Choose sync source</div>
+                <div class="sp-inline-modal-subtitle" id="sp-sync-modal-subtitle"></div>
+                <div class="sp-inline-modal-warning" id="sp-sync-modal-warning">
+                    Synced configuration already exists. Choose which side to keep; the other side will be overwritten.
+                </div>
+                <div class="sp-inline-modal-actions sp-sync-modal-actions">
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-sync-use-local-btn">Keep Local → Upload to profile</button>
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-primary" id="sp-sync-use-profile-btn">Use Chrome profile → Replace local</button>
+                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-sync-cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
     `;
 
     document.body.appendChild(backdrop);
@@ -264,12 +278,19 @@
     const shareLinkBtn = document.getElementById("sp-share-link-btn");
     const shareBacklogBtn = document.getElementById("sp-share-backlog-btn");
     const shareCancelBtn = document.getElementById("sp-share-cancel-btn");
+    const syncModalBackdrop = document.getElementById("sp-sync-modal-backdrop");
+    const syncModal = document.getElementById("sp-sync-modal");
+    const syncModalSubtitleEl = document.getElementById("sp-sync-modal-subtitle");
+    const syncUseLocalBtn = document.getElementById("sp-sync-use-local-btn");
+    const syncUseProfileBtn = document.getElementById("sp-sync-use-profile-btn");
+    const syncCancelBtn = document.getElementById("sp-sync-cancel-btn");
     let activeShareFile = null;
     let activeShareUrl = null;
 
     const CHECKOUT_ICON = "📝";
     const CHECKIN_ICON = "✅";
     let activeInlineModal = null;
+    let activeSyncConflict = null;
 
     const siteFilterSelect = document.getElementById("sp-site-filter-select");
     const folderFilterSelect = document.getElementById("sp-folder-filter-select");
@@ -321,6 +342,10 @@
     backdrop.addEventListener("keydown", (e) => {
         if (e.key === "Tab" && document.getElementById("sp-search-backdrop")) {
             trapModalFocus(e);
+            return;
+        }
+        if (e.key === "Escape" && activeSyncConflict) {
+            closeSyncConflict(null);
             return;
         }
         if (e.key === "Escape" && activeInlineModal) {
@@ -375,6 +400,12 @@
         }
         closeShareModal();
     });
+
+    syncModal.addEventListener("click", (e) => e.stopPropagation());
+    syncModalBackdrop.addEventListener("click", () => closeSyncConflict(null));
+    syncUseLocalBtn.addEventListener("click", () => closeSyncConflict("local"));
+    syncUseProfileBtn.addEventListener("click", () => closeSyncConflict("profile"));
+    syncCancelBtn.addEventListener("click", () => closeSyncConflict(null));
 
     currentFileShareBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -487,7 +518,8 @@
 
     function trapModalFocus(event) {
         let focusRoot = modal;
-        if (activeInlineModal) focusRoot = inlineModal;
+        if (activeSyncConflict) focusRoot = syncModal;
+        else if (activeInlineModal) focusRoot = inlineModal;
         else if (activeShareFile) focusRoot = shareModal;
         else if (!settingsOverlay.classList.contains("sp-hidden")) focusRoot = settingsOverlay;
 
@@ -943,22 +975,67 @@
         chrome.storage.local.set({ favoriteFiles, recentFiles, recentSearches, savedSearches });
     }
 
+    function getStoredConfig(data) {
+        const configs = Array.isArray(data?.siteConfigs)
+            ? data.siteConfigs.map(normalizeSiteConfig).filter(Boolean)
+            : [];
+        if (configs.length === 0) return null;
+
+        const requestedDefault = normalizeSiteInput(data.defaultSite) || "";
+        return {
+            siteConfigs: configs,
+            defaultSite: configs.some(item => item.site === requestedDefault)
+                ? requestedDefault
+                : configs[0].site
+        };
+    }
+
     async function toggleConfigSync() {
-        syncEnabled = syncConfigToggle.checked;
+        const shouldEnable = syncConfigToggle.checked;
+        const previousSyncEnabled = syncEnabled;
         syncConfigToggle.disabled = true;
         try {
-            if (syncEnabled) {
-                await chrome.storage.sync.set({ ...getConfigPayload(), syncEnabled: true });
-                chrome.storage.local.set({ syncEnabled: true });
-                showSettingsStatus("success", "🟢 Configuration sync enabled");
-            } else {
+            if (!shouldEnable) {
+                syncEnabled = false;
                 await chrome.storage.sync.set({ syncEnabled: false });
-                chrome.storage.local.set({ syncEnabled: false });
+                await chrome.storage.local.set({ syncEnabled: false });
                 showSettingsStatus("success", "🟢 Configuration sync disabled");
+                return;
             }
+
+            const syncedData = await chrome.storage.sync.get(CONFIG_SYNC_KEYS);
+            const syncedConfig = getStoredConfig(syncedData);
+            let selectedConfig = { ...getConfigPayload(), siteConfigs: siteConfigs.slice() };
+            let selectedSource = "local";
+
+            if (syncedConfig) {
+                const choice = await promptSyncConflict(selectedConfig, syncedConfig);
+                if (!choice) {
+                    syncConfigToggle.checked = false;
+                    showSettingsStatus("", "");
+                    return;
+                }
+
+                if (choice === "profile") {
+                    selectedSource = "profile";
+                    selectedConfig = syncedConfig;
+                    siteConfigs = selectedConfig.siteConfigs;
+                    defaultSite = selectedConfig.defaultSite;
+                    renderSiteList();
+                    renderPathList();
+                    updateSearchFilterOptions();
+                    updateSelectedLibraryHint();
+                }
+            }
+
+            syncEnabled = true;
+            await chrome.storage.local.set({ ...selectedConfig, syncEnabled: true });
+            await chrome.storage.sync.set({ ...selectedConfig, syncEnabled: true });
+            showSettingsStatus("success", "🟢 Configuration sync enabled using " + selectedSource + " configuration");
         } catch (error) {
-            syncEnabled = !syncEnabled;
+            syncEnabled = previousSyncEnabled;
             syncConfigToggle.checked = syncEnabled;
+            chrome.storage.local.set({ syncEnabled });
             showSettingsStatus("error", "❌ Could not update configuration sync");
         } finally {
             syncConfigToggle.disabled = false;
@@ -1777,6 +1854,28 @@
         if (resolver) {
             resolver(submitted ? value : null);
         }
+    }
+
+    function promptSyncConflict(localConfig, syncedConfig) {
+        syncModalSubtitleEl.textContent = "Local: " + localConfig.siteConfigs.length + " site(s) · Chrome profile: " + syncedConfig.siteConfigs.length + " site(s)";
+        syncModalBackdrop.classList.remove("sp-hidden");
+        syncModalBackdrop.setAttribute("aria-hidden", "false");
+        activeSyncConflict = {};
+
+        setTimeout(() => syncUseLocalBtn.focus(), 0);
+
+        return new Promise((resolve) => {
+            activeSyncConflict.resolve = resolve;
+        });
+    }
+
+    function closeSyncConflict(choice) {
+        if (!activeSyncConflict) return;
+        const resolver = activeSyncConflict.resolve;
+        activeSyncConflict = null;
+        syncModalBackdrop.classList.add("sp-hidden");
+        syncModalBackdrop.setAttribute("aria-hidden", "true");
+        if (resolver) resolver(choice);
     }
 
     function openShareModal(file, url) {

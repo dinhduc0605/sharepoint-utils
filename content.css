@@ -939,6 +939,12 @@
 .sp-inline-modal-btn-primary:hover { 
     background: var(--sp-accent-muted); 
 }
+.sp-sync-modal-actions {
+    flex-direction: column;
+}
+.sp-sync-modal-actions .sp-inline-modal-btn {
+    width: 100%;
+}
 
 /* Custom Styled Scrollbar */
 .sp-results::-webkit-scrollbar, .sp-settings-content::-webkit-scrollbar { 

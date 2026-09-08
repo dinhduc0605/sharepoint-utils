@@ -55,7 +55,8 @@ SharePoint Utils は、SharePoint のドキュメントライブラリ内のフ�
 - **Backup & Sync**:
   - `Export JSON` でサイト、ライブラリ、サブフォルダ、デフォルトサイトをバックアップできます。
   - `Import JSON` でバックアップを復元できます。現在のサイト設定はインポート内容で置き換わります。
-  - `Sync sites and folders across Chrome` を有効にすると、Chrome の `storage.sync` を使って同じ Chrome プロフィール間で設定を同期します。
+  - `Sync sites and folders across Chrome` を有効にすると、Chrome の `storage.sync` を使って同じ Chrome プロフィール間で設定を同期します。既存の同期データがある場合は、Local をアップロードするか Chrome プロフィールの設定をこの端末へ適用するかを選択できます。
+  - Sync が有効な間は、変更をまず Local に保存してからプロフィールへ自動コピーします。再度開いたときはプロフィール側の設定が Local に適用されます。Sync を無効にしても、プロフィール側のデータは削除されません。
 - **Add Subfolder (サブフォルダの追加)**:
   - デフォルトサイトのサブフォルダ (例: `/Reports/2024`) を入力し、`+ Add` ボタンを押します。
   - SharePoint のフォルダ URL をそのまま貼り付けても追加できます。
