@@ -28,6 +28,10 @@
     let lastSearchResults = []; // store last search results for re-filtering
     let lastQuery = "";
     let searchState = null;
+    let favoriteFiles = [];
+    let recentFiles = [];
+    let recentSearches = [];
+    let savedSearches = [];
     let currentPageFile = null;
 
     // ============================================
@@ -41,6 +45,7 @@
             <div class="sp-search-header">
                 <img src="${chrome.runtime.getURL('icons/icon32.png')}" class="sp-search-header-icon" alt="S">
                 <h2>SharePoint Utils</h2>
+                <button class="sp-save-search-btn" id="sp-save-search-btn" title="Save current search">🔖</button>
                 <button class="sp-settings-icon-btn" id="sp-settings-icon-btn" title="Settings">⚙️</button>
                 <button class="sp-search-close" id="sp-close-btn" title="Close (Esc)">✕</button>
             </div>
@@ -98,6 +103,7 @@
                         <div class="sp-search-empty-icon">🔍</div>
                         <div class="sp-search-empty-title">Search for a file</div>
                         <div class="sp-search-empty-hint">Type a filename and press <kbd>Enter</kbd> to search across your SharePoint sites</div>
+                        <div class="sp-empty-extras" id="sp-empty-extras"></div>
                     </div>
                 </div>
             </div>
@@ -234,6 +240,7 @@
     const sortFilterSelect = document.getElementById("sp-sort-filter-select");
     const modifiedAfterInput = document.getElementById("sp-modified-after-filter");
     const settingsIconBtn = document.getElementById("sp-settings-icon-btn");
+    const saveSearchBtn = document.getElementById("sp-save-search-btn");
     const settingsOverlay = document.getElementById("sp-settings-overlay");
     const settingsCloseBtn = document.getElementById("sp-settings-close-btn");
 
@@ -259,6 +266,7 @@
         }
     });
     settingsCloseBtn.addEventListener("click", closeSettingsOverlay);
+    saveSearchBtn.addEventListener("click", saveCurrentSearch);
 
     // ============================================
     // Events
@@ -843,9 +851,29 @@
     // ============================================
     function saveSiteConfigs() { chrome.storage.local.set({ siteConfigs, defaultSite }); }
 
+    function saveUserPreferences() {
+        chrome.storage.local.set({ favoriteFiles, recentFiles, recentSearches, savedSearches });
+    }
+
     async function restoreState() {
         try {
-            const data = await chrome.storage.local.get(["siteConfigs", "searchPaths", "configUrl", "defaultSite"]);
+            const data = await chrome.storage.local.get([
+                "siteConfigs", "searchPaths", "configUrl", "defaultSite",
+                "favoriteFiles", "recentFiles", "recentSearches", "savedSearches"
+            ]);
+
+            favoriteFiles = Array.isArray(data.favoriteFiles)
+                ? data.favoriteFiles.filter(file => file?.path && file?.name).slice(0, 50)
+                : [];
+            recentFiles = Array.isArray(data.recentFiles)
+                ? data.recentFiles.filter(file => file?.path && file?.name).slice(0, 20)
+                : [];
+            recentSearches = Array.isArray(data.recentSearches)
+                ? data.recentSearches.filter(Boolean).map(String).slice(0, 10)
+                : [];
+            savedSearches = Array.isArray(data.savedSearches)
+                ? data.savedSearches.filter(Boolean).map(String).slice(0, 20)
+                : [];
 
             if (Array.isArray(data.siteConfigs) && data.siteConfigs.length > 0) {
                 siteConfigs = data.siteConfigs
@@ -872,6 +900,7 @@
             renderPathList();
             updateSearchFilterOptions();
             updateSelectedLibraryHint();
+            renderEmptyStateExtras();
             chrome.storage.local.remove("fileData");
             chrome.storage.local.remove("searchPaths");
             chrome.storage.local.remove("configUrl");
@@ -951,6 +980,7 @@
 
             lastSearchResults = searchPage.files;
             lastQuery = currentQuery;
+            rememberRecentSearch(currentQuery);
             searchState = {
                 query: currentQuery,
                 selectedSite,
@@ -1165,12 +1195,153 @@
         el.id = 'sp-search-empty-state';
         el.innerHTML = '<div class="sp-search-empty-icon">🔍</div>' +
             '<div class="sp-search-empty-title">Search for a file</div>' +
-            '<div class="sp-search-empty-hint">Type a filename and press <kbd>Enter</kbd> to search across your SharePoint sites</div>';
+            '<div class="sp-search-empty-hint">Type a filename and press <kbd>Enter</kbd> to search across your SharePoint sites</div>' +
+            '<div class="sp-empty-extras" id="sp-empty-extras"></div>';
         resultsEl.appendChild(el);
+        renderEmptyStateExtras();
     }
     function hideEmptyState() {
         const el = document.getElementById('sp-search-empty-state');
         if (el) el.remove();
+    }
+
+    function getFavoriteKey(file) {
+        return String(file?.siteUrl || "").toLowerCase() + "|" + String(file?.path || "").toLowerCase();
+    }
+
+    function toStoredFile(file, url) {
+        return {
+            name: String(file?.name || "File"),
+            path: String(file?.path || ""),
+            site: String(file?.site || ""),
+            siteUrl: String(file?.siteUrl || ""),
+            url: String(url || getViewFileUrl(file?.path || "")),
+            size: Number(file?.size) || 0,
+            modified: String(file?.modified || "")
+        };
+    }
+
+    function isFavoriteFile(file) {
+        const key = getFavoriteKey(file);
+        return favoriteFiles.some(item => getFavoriteKey(item) === key);
+    }
+
+    function updateFavoriteButton(button, file) {
+        if (!button) return;
+        const favorite = isFavoriteFile(file);
+        button.textContent = favorite ? "⭐" : "☆";
+        button.title = favorite ? "Remove from favorites" : "Add to favorites";
+        button.setAttribute("aria-label", button.title);
+    }
+
+    function toggleFavorite(file, button) {
+        const key = getFavoriteKey(file);
+        const existingIndex = favoriteFiles.findIndex(item => getFavoriteKey(item) === key);
+        if (existingIndex >= 0) {
+            favoriteFiles.splice(existingIndex, 1);
+            showStatus("success", '🟢 Removed "' + escapeHtml(file.name) + '" from favorites');
+        } else {
+            favoriteFiles.unshift(toStoredFile(file, getViewFileUrl(file.path)));
+            favoriteFiles = favoriteFiles.slice(0, 50);
+            showStatus("success", '🟢 Added "' + escapeHtml(file.name) + '" to favorites');
+        }
+        saveUserPreferences();
+        updateFavoriteButton(button, file);
+        renderEmptyStateExtras();
+    }
+
+    function rememberRecentFile(file, url) {
+        const storedFile = toStoredFile(file, url);
+        const key = getFavoriteKey(storedFile);
+        recentFiles = [storedFile].concat(recentFiles.filter(item => getFavoriteKey(item) !== key)).slice(0, 20);
+        saveUserPreferences();
+    }
+
+    function rememberRecentSearch(query) {
+        const value = String(query || "").trim();
+        if (!value) return;
+        recentSearches = [value].concat(recentSearches.filter(item => item.toLowerCase() !== value.toLowerCase())).slice(0, 10);
+        saveUserPreferences();
+    }
+
+    function saveCurrentSearch() {
+        const value = searchInput.value.trim();
+        if (value.length < MIN_QUERY_LENGTH) {
+            showStatus("error", "❌ Enter at least " + MIN_QUERY_LENGTH + " characters before saving a search");
+            return;
+        }
+        savedSearches = [value].concat(savedSearches.filter(item => item.toLowerCase() !== value.toLowerCase())).slice(0, 20);
+        saveUserPreferences();
+        renderEmptyStateExtras();
+        showStatus("success", '🟢 Saved search "' + escapeHtml(value) + '"');
+    }
+
+    function createEmptyStateButton(label, className, onClick) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = className;
+        button.textContent = label;
+        button.addEventListener("click", onClick);
+        return button;
+    }
+
+    function renderEmptyStateExtras() {
+        const extras = document.getElementById("sp-empty-extras");
+        if (!extras) return;
+        extras.innerHTML = "";
+
+        const addSection = function (title, items, className, onClick, removeAction) {
+            if (!items.length) return;
+            const section = document.createElement("div");
+            section.className = "sp-empty-section";
+            const heading = document.createElement("div");
+            heading.className = "sp-empty-section-title";
+            heading.textContent = title;
+            section.appendChild(heading);
+            const list = document.createElement("div");
+            list.className = "sp-empty-section-list";
+            items.forEach(function (item, index) {
+                const row = document.createElement("div");
+                row.className = "sp-empty-item-row";
+                const button = createEmptyStateButton(
+                    typeof item === "string" ? item : item.name,
+                    className,
+                    () => onClick(item)
+                );
+                row.appendChild(button);
+                if (removeAction) {
+                    const removeButton = createEmptyStateButton("✕", "sp-empty-item-remove", () => removeAction(item, index));
+                    removeButton.title = "Remove";
+                    row.appendChild(removeButton);
+                }
+                list.appendChild(row);
+            });
+            section.appendChild(list);
+            extras.appendChild(section);
+        };
+
+        addSection("Recent searches", recentSearches, "sp-empty-item-btn", function (query) {
+            searchInput.value = query;
+            clearBtn.classList.add("sp-visible");
+            handleSearch();
+        });
+        addSection("Saved searches", savedSearches, "sp-empty-item-btn", function (query) {
+            searchInput.value = query;
+            clearBtn.classList.add("sp-visible");
+            handleSearch();
+        }, function (query) {
+            savedSearches = savedSearches.filter(item => item !== query);
+            saveUserPreferences();
+            renderEmptyStateExtras();
+        });
+        addSection("Recent files", recentFiles, "sp-empty-item-btn", function (file) {
+            const url = file.url || getViewFileUrl(file.path);
+            if (url) window.open(url, "_blank");
+        });
+        addSection("Favorites", favoriteFiles, "sp-empty-item-btn", function (file) {
+            const url = file.url || getViewFileUrl(file.path);
+            if (url) window.open(url, "_blank");
+        });
     }
 
     function displayResults(files, query) {
@@ -1201,7 +1372,10 @@
             item.className = "sp-file-item";
             item.title = "Open: " + file.name;
             item.style.cursor = "pointer";
-            item.addEventListener("click", () => window.open(viewFileUrl, "_blank"));
+            item.addEventListener("click", () => {
+                rememberRecentFile(file, viewFileUrl);
+                window.open(viewFileUrl, "_blank");
+            });
 
             item.innerHTML =
                 '<span class="sp-file-icon">' + getFileIcon(file.name) + '</span>' +
@@ -1218,12 +1392,20 @@
                 (canOpenInDesktopApp(file) ? '<button class="sp-action-btn sp-action-desktop" title="Open in desktop app">🖥️</button>' : '') +
                 '<button class="sp-action-btn sp-action-checkout" title="' + (file.checkoutState === "unknown" ? 'Check checkout status' : (file.isCheckedOut ? 'Check in file' : 'Check out file')) + '">' + (file.checkoutState === "unknown" ? "🔄" : getCheckoutActionIcon(file.isCheckedOut)) + '</button>' +
                 '<button class="sp-action-btn sp-action-share" title="Copy share link">🔗</button>' +
+                '<button class="sp-action-btn sp-action-favorite" title="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '">' + (isFavoriteFile(file) ? "⭐" : "☆") + '</button>' +
                 '</div>';
 
             item.querySelector(".sp-action-share").addEventListener("click", async (e) => {
                 e.stopPropagation();
                 openShareModal(file, viewFileUrl);
             });
+
+            const favoriteBtn = item.querySelector(".sp-action-favorite");
+            favoriteBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                toggleFavorite(file, favoriteBtn);
+            });
+            updateFavoriteButton(favoriteBtn, file);
 
             const desktopBtn = item.querySelector(".sp-action-desktop");
             if (desktopBtn) {
