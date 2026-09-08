@@ -32,6 +32,13 @@
     padding-top: 10vh;
     font-family: var(--sp-font);
     animation: sp-fadeIn 0.2s ease-out;
+    isolation: isolate;
+    overscroll-behavior: contain;
+}
+
+.sp-search-backdrop,
+.sp-search-backdrop * {
+    box-sizing: border-box;
 }
 
 @keyframes sp-fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -506,6 +513,14 @@
 .sp-no-results-text { 
     font-size: 13px; 
 }
+.sp-search-backdrop button:focus-visible,
+.sp-search-backdrop input:focus-visible,
+.sp-search-backdrop select:focus-visible,
+.sp-search-backdrop textarea:focus-visible,
+.sp-search-backdrop [tabindex]:focus-visible {
+    outline: 2px solid var(--sp-accent);
+    outline-offset: 2px;
+}
 
 .sp-load-more-btn {
     align-self: center;
@@ -912,4 +927,69 @@
 }
 .sp-results::-webkit-scrollbar-thumb:hover, .sp-settings-content::-webkit-scrollbar-thumb:hover { 
     background: var(--sp-border-hover); 
+}
+
+@media (max-width: 700px) {
+    .sp-search-backdrop {
+        align-items: stretch;
+        padding: 8px;
+    }
+    .sp-search-modal {
+        width: 100%;
+        max-width: none;
+        height: calc(100vh - 16px);
+        max-height: none;
+        border-radius: 12px;
+    }
+    .sp-search-header,
+    .sp-search-input-section,
+    .sp-results,
+    .sp-settings-content,
+    .sp-footer {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+    .sp-search-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .sp-inline-filters {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+    .sp-filter-inline,
+    .sp-filter-date {
+        width: 100%;
+    }
+    .sp-file-item {
+        align-items: flex-start;
+        padding: 10px;
+    }
+    .sp-file-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
+    .sp-file-actions {
+        grid-template-columns: repeat(2, auto);
+    }
+    .sp-current-file {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sp-search-backdrop,
+    .sp-search-modal,
+    .sp-settings-overlay,
+    .sp-inline-modal,
+    .sp-search-backdrop * {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
 }

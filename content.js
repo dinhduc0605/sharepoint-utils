@@ -3,6 +3,8 @@
 // Injected into the active tab to show a modal overlay
 // ============================================
 (function () {
+    const previouslyFocusedElement = document.activeElement;
+
     // Prevent double injection
     if (document.getElementById("sp-search-backdrop")) {
         document.getElementById("sp-search-backdrop").remove();
@@ -41,25 +43,25 @@
     backdrop.id = "sp-search-backdrop";
     backdrop.className = "sp-search-backdrop";
     backdrop.innerHTML = `
-        <div class="sp-search-modal" id="sp-search-modal">
+        <div class="sp-search-modal" id="sp-search-modal" role="dialog" aria-modal="true" aria-labelledby="sp-modal-title">
             <div class="sp-search-header">
                 <img src="${chrome.runtime.getURL('icons/icon32.png')}" class="sp-search-header-icon" alt="S">
-                <h2>SharePoint Utils</h2>
-                <button class="sp-save-search-btn" id="sp-save-search-btn" title="Save current search">🔖</button>
-                <button class="sp-settings-icon-btn" id="sp-settings-icon-btn" title="Settings">⚙️</button>
-                <button class="sp-search-close" id="sp-close-btn" title="Close (Esc)">✕</button>
+                <h2 id="sp-modal-title">SharePoint Utils</h2>
+                <button type="button" class="sp-save-search-btn" id="sp-save-search-btn" title="Save current search" aria-label="Save current search">🔖</button>
+                <button type="button" class="sp-settings-icon-btn" id="sp-settings-icon-btn" title="Settings" aria-label="Open settings">⚙️</button>
+                <button type="button" class="sp-search-close" id="sp-close-btn" title="Close (Esc)" aria-label="Close SharePoint Utils">✕</button>
             </div>
 
-            <div class="sp-current-file sp-hidden" id="sp-current-file">
+            <div class="sp-current-file sp-hidden" id="sp-current-file" aria-live="polite">
                 <div class="sp-current-file-info">
                     <div class="sp-current-file-name" id="sp-current-file-name"></div>
                     <div class="sp-file-path" id="sp-current-file-path"></div>
                     <div class="sp-file-meta" id="sp-current-file-meta"></div>
                 </div>
                 <div class="sp-file-actions">
-                    <button class="sp-action-btn sp-action-desktop" id="sp-current-file-desktop-btn" title="Open in desktop app">🖥️</button>
-                    <button class="sp-action-btn sp-action-checkout" id="sp-current-file-checkout-btn" title="Check out file">📝</button>
-                    <button class="sp-action-btn sp-action-share" id="sp-current-file-share-btn" title="Copy share link">🔗</button>
+                    <button type="button" class="sp-action-btn sp-action-desktop" id="sp-current-file-desktop-btn" title="Open in desktop app" aria-label="Open in desktop app">🖥️</button>
+                    <button type="button" class="sp-action-btn sp-action-checkout" id="sp-current-file-checkout-btn" title="Check out file" aria-label="Check out file">📝</button>
+                    <button type="button" class="sp-action-btn sp-action-share" id="sp-current-file-share-btn" title="Copy share link" aria-label="Copy share link">🔗</button>
                 </div>
             </div>
 
@@ -69,15 +71,15 @@
                     <div class="sp-search-row">
                         <div class="sp-search-input-wrap">
                             <span class="sp-search-icon">🔍</span>
-                            <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename and press Enter…" autocomplete="off">
-                            <button class="sp-clear-btn" id="sp-clear-btn" title="Clear">✕</button>
+                            <input type="text" class="sp-search-input" id="sp-search-input" placeholder="Type filename and press Enter…" autocomplete="off" aria-label="Search SharePoint files">
+                            <button type="button" class="sp-clear-btn" id="sp-clear-btn" title="Clear" aria-label="Clear search">✕</button>
                         </div>
                         <div class="sp-inline-filters">
-                            <select class="sp-filter-select sp-filter-inline" id="sp-site-filter-select" title="Filter by site"></select>
-                            <select class="sp-filter-select sp-filter-inline" id="sp-folder-filter-select" title="Filter by subfolder">
+                            <select class="sp-filter-select sp-filter-inline" id="sp-site-filter-select" title="Filter by site" aria-label="Filter by site"></select>
+                            <select class="sp-filter-select sp-filter-inline" id="sp-folder-filter-select" title="Filter by subfolder" aria-label="Filter by subfolder">
                                 <option value="">All folders</option>
                             </select>
-                            <select class="sp-filter-select sp-filter-inline" id="sp-type-filter-select" title="Filter by file type">
+                            <select class="sp-filter-select sp-filter-inline" id="sp-type-filter-select" title="Filter by file type" aria-label="Filter by file type">
                                 <option value="">All types</option>
                                 <option value="excel">Excel</option>
                                 <option value="word">Word</option>
@@ -85,7 +87,7 @@
                                 <option value="pdf">PDF</option>
                                 <option value="other">Other</option>
                             </select>
-                            <select class="sp-filter-select sp-filter-inline" id="sp-sort-filter-select" title="Sort results">
+                            <select class="sp-filter-select sp-filter-inline" id="sp-sort-filter-select" title="Sort results" aria-label="Sort results">
                                 <option value="relevance">Relevance</option>
                                 <option value="nameAsc">Name A–Z</option>
                                 <option value="nameDesc">Name Z–A</option>
@@ -94,7 +96,7 @@
                                 <option value="sizeDesc">Largest</option>
                                 <option value="sizeAsc">Smallest</option>
                             </select>
-                            <input type="date" class="sp-filter-date" id="sp-modified-after-filter" title="Modified after">
+                            <input type="date" class="sp-filter-date" id="sp-modified-after-filter" title="Modified after" aria-label="Show files modified after">
                         </div>
                     </div>
                 </div>
@@ -109,10 +111,10 @@
             </div>
 
             <!-- Settings Modal Overlay (inside the main modal) -->
-            <div class="sp-settings-overlay sp-hidden" id="sp-settings-overlay">
+            <div class="sp-settings-overlay sp-hidden" id="sp-settings-overlay" aria-hidden="true">
                 <div class="sp-settings-overlay-header">
                     <span class="sp-settings-overlay-title">⚙️ Settings</span>
-                    <button class="sp-search-close" id="sp-settings-close-btn" title="Close Settings">✕</button>
+                    <button type="button" class="sp-search-close" id="sp-settings-close-btn" title="Close Settings" aria-label="Close settings">✕</button>
                 </div>
                 <div class="sp-settings-content">
                     <div class="sp-settings-section">
@@ -145,7 +147,7 @@
                             <div class="sp-path-list-empty">No subfolders added yet.</div>
                         </div>
                     </div>
-                    <div class="sp-status sp-hidden" id="sp-settings-status"></div>
+                    <div class="sp-status sp-hidden" id="sp-settings-status" role="status" aria-live="polite"></div>
                 </div>
                 <div class="sp-footer" style="display:flex; align-items:center; justify-content:space-between;">
                     <span id="sp-settings-connection-status"></span>
@@ -154,11 +156,11 @@
             </div>
 
             <div class="sp-footer" style="display:flex; align-items:center; justify-content:space-between;">
-                <span id="sp-connection-status">⏳ Checking connection...</span>
+                    <span id="sp-connection-status" aria-live="polite">⏳ Checking connection...</span>
                 <span class="sp-version">v1.1</span>
             </div>
         </div>
-        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-inline-modal-backdrop">
+        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-inline-modal-backdrop" aria-hidden="true">
             <div class="sp-inline-modal" id="sp-inline-modal" role="dialog" aria-modal="true" aria-labelledby="sp-inline-modal-title">
                 <div class="sp-inline-modal-title" id="sp-inline-modal-title">Check In Comment</div>
                 <div class="sp-inline-modal-subtitle" id="sp-inline-modal-subtitle"></div>
@@ -172,9 +174,9 @@
                 </div>
             </div>
         </div>
-        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-share-modal-backdrop">
-            <div class="sp-inline-modal" id="sp-share-modal" role="dialog" aria-modal="true">
-                <div class="sp-inline-modal-title">Share Options</div>
+        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-share-modal-backdrop" aria-hidden="true">
+            <div class="sp-inline-modal" id="sp-share-modal" role="dialog" aria-modal="true" aria-labelledby="sp-share-modal-title">
+                <div class="sp-inline-modal-title" id="sp-share-modal-title">Share Options</div>
                 <div class="sp-inline-modal-subtitle" id="sp-share-modal-filename" style="word-break: break-all;"></div>
                 <div class="sp-inline-modal-actions" style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
                     <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-share-link-btn" style="width:100%; text-align:left; justify-content:flex-start;">🔗 Share Link (URL only)</button>
@@ -249,12 +251,14 @@
     // ============================================
     function openSettingsOverlay() {
         settingsOverlay.classList.remove("sp-hidden");
+        settingsOverlay.setAttribute("aria-hidden", "false");
         settingsIconBtn.classList.add("sp-active");
         const settingsConnEl = document.getElementById("sp-settings-connection-status");
         if (settingsConnEl) settingsConnEl.textContent = connectionEl.textContent;
     }
     function closeSettingsOverlay() {
         settingsOverlay.classList.add("sp-hidden");
+        settingsOverlay.setAttribute("aria-hidden", "true");
         settingsIconBtn.classList.remove("sp-active");
         searchInput.focus();
     }
@@ -275,7 +279,11 @@
     backdrop.addEventListener("click", (e) => {
         if (e.target === backdrop) closeModal();
     });
-    document.addEventListener("keydown", (e) => {
+    backdrop.addEventListener("keydown", (e) => {
+        if (e.key === "Tab" && document.getElementById("sp-search-backdrop")) {
+            trapModalFocus(e);
+            return;
+        }
         if (e.key === "Escape" && activeInlineModal) {
             closeInlineModal(false);
             return;
@@ -433,6 +441,33 @@
     function closeModal() {
         const el = document.getElementById("sp-search-backdrop");
         if (el) el.remove();
+        if (previouslyFocusedElement && typeof previouslyFocusedElement.focus === "function") {
+            previouslyFocusedElement.focus();
+        }
+    }
+
+    function trapModalFocus(event) {
+        let focusRoot = modal;
+        if (activeInlineModal) focusRoot = inlineModal;
+        else if (activeShareFile) focusRoot = shareModal;
+        else if (!settingsOverlay.classList.contains("sp-hidden")) focusRoot = settingsOverlay;
+
+        const focusable = Array.from(focusRoot.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+        )).filter(function (element) {
+            return element.getClientRects().length > 0;
+        });
+        if (!focusable.length) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !focusRoot.contains(document.activeElement))) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !focusRoot.contains(document.activeElement))) {
+            event.preventDefault();
+            first.focus();
+        }
     }
 
     // ============================================
@@ -1372,9 +1407,18 @@
             item.className = "sp-file-item";
             item.title = "Open: " + file.name;
             item.style.cursor = "pointer";
-            item.addEventListener("click", () => {
+            item.setAttribute("role", "button");
+            item.setAttribute("tabindex", "0");
+            const openResult = function () {
                 rememberRecentFile(file, viewFileUrl);
                 window.open(viewFileUrl, "_blank");
+            };
+            item.addEventListener("click", openResult);
+            item.addEventListener("keydown", function (event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openResult();
+                }
             });
 
             item.innerHTML =
@@ -1389,10 +1433,10 @@
                 '</div>' +
                 '</div>' +
                 '<div class="sp-file-actions">' +
-                (canOpenInDesktopApp(file) ? '<button class="sp-action-btn sp-action-desktop" title="Open in desktop app">🖥️</button>' : '') +
-                '<button class="sp-action-btn sp-action-checkout" title="' + (file.checkoutState === "unknown" ? 'Check checkout status' : (file.isCheckedOut ? 'Check in file' : 'Check out file')) + '">' + (file.checkoutState === "unknown" ? "🔄" : getCheckoutActionIcon(file.isCheckedOut)) + '</button>' +
-                '<button class="sp-action-btn sp-action-share" title="Copy share link">🔗</button>' +
-                '<button class="sp-action-btn sp-action-favorite" title="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '">' + (isFavoriteFile(file) ? "⭐" : "☆") + '</button>' +
+                (canOpenInDesktopApp(file) ? '<button type="button" class="sp-action-btn sp-action-desktop" title="Open in desktop app" aria-label="Open in desktop app">🖥️</button>' : '') +
+                '<button type="button" class="sp-action-btn sp-action-checkout" title="' + (file.checkoutState === "unknown" ? 'Check checkout status' : (file.isCheckedOut ? 'Check in file' : 'Check out file')) + '" aria-label="' + (file.checkoutState === "unknown" ? 'Check checkout status' : (file.isCheckedOut ? 'Check in file' : 'Check out file')) + '">' + (file.checkoutState === "unknown" ? "🔄" : getCheckoutActionIcon(file.isCheckedOut)) + '</button>' +
+                '<button type="button" class="sp-action-btn sp-action-share" title="Copy share link" aria-label="Copy share link">🔗</button>' +
+                '<button type="button" class="sp-action-btn sp-action-favorite" title="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '" aria-label="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '">' + (isFavoriteFile(file) ? "⭐" : "☆") + '</button>' +
                 '</div>';
 
             item.querySelector(".sp-action-share").addEventListener("click", async (e) => {
@@ -1490,12 +1534,14 @@
                 file.checkoutState = "checkedOut";
                 buttonEl.textContent = getCheckoutActionIcon(true);
                 buttonEl.title = "Check in file";
+                buttonEl.setAttribute("aria-label", "Check in file");
                 showStatus("success", '🟢 Checked out "' + escapeHtml(file.name) + '"');
             } else {
                 const comment = await promptForCheckInComment(file.name);
                 if (comment === null) {
                     buttonEl.textContent = getCheckoutActionIcon(file.isCheckedOut);
                     buttonEl.title = file.isCheckedOut ? "Check in file" : "Check out file";
+                    buttonEl.setAttribute("aria-label", buttonEl.title);
                     return;
                 }
                 await sharePointCheckIn(file, comment);
@@ -1503,6 +1549,7 @@
                 file.checkoutState = "available";
                 buttonEl.textContent = getCheckoutActionIcon(false);
                 buttonEl.title = "Check out file";
+                buttonEl.setAttribute("aria-label", "Check out file");
                 showStatus("success", '🟢 Checked in "' + escapeHtml(file.name) + '"');
             }
             if (currentPageFile && currentPageFile.path === file.path) {
@@ -1512,6 +1559,7 @@
         } catch (error) {
             buttonEl.textContent = originalLabel;
             buttonEl.title = file.isCheckedOut ? "Check in file" : "Check out file";
+            buttonEl.setAttribute("aria-label", buttonEl.title);
             showStatus("error", "❌ " + error.message);
         } finally {
             buttonEl.disabled = false;
@@ -1584,6 +1632,7 @@
         inlineModalSubtitleEl.textContent = fileName ? 'Enter a check-in comment for "' + fileName + '"' : "Enter a check-in comment";
         inlineModalTextarea.value = "";
         inlineModalBackdrop.classList.remove("sp-hidden");
+        inlineModalBackdrop.setAttribute("aria-hidden", "false");
         inlineModalOkBtn.disabled = false;
         activeInlineModal = {};
 
@@ -1607,6 +1656,7 @@
         const resolver = activeInlineModal.resolve;
         activeInlineModal = null;
         inlineModalBackdrop.classList.add("sp-hidden");
+        inlineModalBackdrop.setAttribute("aria-hidden", "true");
         inlineModalTextarea.value = "";
         if (resolver) {
             resolver(submitted ? value : null);
@@ -1618,12 +1668,14 @@
         activeShareUrl = url;
         shareModalFilename.textContent = file.name;
         shareModalBackdrop.classList.remove("sp-hidden");
+        shareModalBackdrop.setAttribute("aria-hidden", "false");
     }
 
     function closeShareModal() {
         activeShareFile = null;
         activeShareUrl = null;
         shareModalBackdrop.classList.add("sp-hidden");
+        shareModalBackdrop.setAttribute("aria-hidden", "true");
     }
 
     function renderCurrentPageFile() {
@@ -1661,6 +1713,7 @@
         currentFileCheckoutBtn.title = currentPageFile.metadataLoaded && currentPageFile.path
             ? (currentPageFile.isCheckedOut ? "Check in file" : "Check out file")
             : currentPageFile.metadataLoading ? "Loading file details..." : "File details unavailable";
+        currentFileCheckoutBtn.setAttribute("aria-label", currentFileCheckoutBtn.title);
         currentFileEl.classList.remove("sp-hidden");
     }
 
