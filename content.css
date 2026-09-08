@@ -302,24 +302,6 @@
     background: var(--sp-bg-hover);
     color: var(--sp-text-primary);
 }
-.sp-filter-date {
-    height: 40px;
-    width: 126px;
-    box-sizing: border-box;
-    padding: 0 9px;
-    border: 1px solid var(--sp-border);
-    border-radius: 8px;
-    background: var(--sp-bg-card);
-    color: var(--sp-text-primary);
-    font-size: 12px;
-    outline: none;
-    cursor: pointer;
-}
-.sp-filter-date:focus,
-.sp-filter-date:hover {
-    border-color: var(--sp-border-hover);
-    background-color: var(--sp-bg-hover);
-}
 .sp-filter-select {
     min-width: 0;
     box-sizing: border-box;
@@ -829,10 +811,37 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
     border-top: 1px solid var(--sp-border); 
     font-size: 11px; 
     color: var(--sp-text-secondary);
     background: rgba(24, 24, 27, 0.4);
+}
+.sp-settings-footer {
+    gap: 12px;
+}
+.sp-settings-footer-content {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sp-settings-footer-content #sp-settings-connection-status {
+    white-space: nowrap;
+}
+.sp-settings-footer-content .sp-status {
+    min-width: 0;
+    flex: 1;
+    padding: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+}
+.sp-settings-footer-content .sp-status.sp-loading,
+.sp-settings-footer-content .sp-status.sp-error,
+.sp-settings-footer-content .sp-status.sp-success {
+    background: transparent;
+    border: 0;
 }
 .sp-version {
     font-size: 9px;
@@ -991,8 +1000,7 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         width: 100%;
     }
-    .sp-filter-inline,
-    .sp-filter-date {
+    .sp-filter-inline {
         width: 100%;
     }
     .sp-file-item {

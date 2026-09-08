@@ -105,7 +105,7 @@
                                 <option value="other">Other</option>
                             </select>
                             <select class="sp-filter-select sp-filter-inline" id="sp-sort-filter-select" title="Sort results" aria-label="Sort results">
-                                <option value="relevance">Relevance</option>
+                                <option value="relevance">Sort</option>
                                 <option value="nameAsc">Name A–Z</option>
                                 <option value="nameDesc">Name Z–A</option>
                                 <option value="modifiedDesc">Newest</option>
@@ -113,7 +113,6 @@
                                 <option value="sizeDesc">Largest</option>
                                 <option value="sizeAsc">Smallest</option>
                             </select>
-                            <input type="date" class="sp-filter-date" id="sp-modified-after-filter" title="Modified after" aria-label="Show files modified after">
                         </div>
                     </div>
                 </div>
@@ -178,10 +177,12 @@
                             <div class="sp-path-list-empty">No subfolders added yet.</div>
                         </div>
                     </div>
-                    <div class="sp-status sp-hidden" id="sp-settings-status" role="status" aria-live="polite"></div>
                 </div>
-                <div class="sp-footer" style="display:flex; align-items:center; justify-content:space-between;">
-                    <span id="sp-settings-connection-status"></span>
+                <div class="sp-footer sp-settings-footer">
+                    <div class="sp-settings-footer-content">
+                        <span id="sp-settings-connection-status"></span>
+                        <div class="sp-status sp-hidden" id="sp-settings-status" role="status" aria-live="polite"></div>
+                    </div>
                     <span class="sp-version">v1.1</span>
                 </div>
             </div>
@@ -296,7 +297,6 @@
     const folderFilterSelect = document.getElementById("sp-folder-filter-select");
     const fileTypeFilterSelect = document.getElementById("sp-type-filter-select");
     const sortFilterSelect = document.getElementById("sp-sort-filter-select");
-    const modifiedAfterInput = document.getElementById("sp-modified-after-filter");
     const settingsIconBtn = document.getElementById("sp-settings-icon-btn");
     const saveSearchBtn = document.getElementById("sp-save-search-btn");
     const settingsOverlay = document.getElementById("sp-settings-overlay");
@@ -475,12 +475,6 @@
     });
 
     sortFilterSelect.addEventListener("change", () => {
-        if (lastSearchResults.length > 0 && lastQuery) {
-            displayResults(getVisibleResults(), lastQuery);
-        }
-    });
-
-    modifiedAfterInput.addEventListener("change", () => {
         if (lastSearchResults.length > 0 && lastQuery) {
             displayResults(getVisibleResults(), lastQuery);
         }
@@ -1939,9 +1933,6 @@
         const selectedSite = siteFilterSelect.value;
         const selectedFolderKey = folderFilterSelect.value;
         const selectedType = fileTypeFilterSelect.value;
-        const modifiedAfter = modifiedAfterInput.value
-            ? new Date(modifiedAfterInput.value + "T00:00:00")
-            : null;
 
         return files.filter(function (file) {
             if (selectedSite && file.site !== selectedSite) {
@@ -1958,12 +1949,6 @@
             }
             if (selectedType && getFileTypeCategory(file.name) !== selectedType) {
                 return false;
-            }
-            if (modifiedAfter && !Number.isNaN(modifiedAfter.getTime())) {
-                const fileModified = new Date(file.modified || "");
-                if (Number.isNaN(fileModified.getTime()) || fileModified < modifiedAfter) {
-                    return false;
-                }
             }
             return true;
         });
