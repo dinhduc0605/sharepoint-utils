@@ -773,7 +773,7 @@
 
         if (/^https?:\/\//i.test(value)) {
             path = extractSubfolderFromUrl(value, site);
-        } else if (value.startsWith("/sites/")) {
+        } else if (/^\/(sites|teams)\//i.test(value)) {
             path = extractSubfolderFromServerPath(value, site);
         }
 
