@@ -22,6 +22,22 @@
     const CURRENT_FILE_METADATA_TIMEOUT_MS = 9000;
     const SEARCH_PAGE_SIZE = 100;
     const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb", "ppt", "pptx", "pptm"]);
+    const SP_UTILS = globalThis.SharePointUtils;
+    if (!SP_UTILS) throw new Error("SharePoint Utils helpers were not loaded");
+    const {
+        encodeODataString,
+        encodeSharePointPath,
+        escapeHtml,
+        escapeRegex,
+        formatDate,
+        formatEditorName,
+        formatFileSize,
+        getFileIcon,
+        getFileTypeCategory,
+        getOfficeDesktopProtocol,
+        isFileCheckedOut,
+        normalizeSearchInput
+    } = SP_UTILS;
 
     // siteConfigs: array of { site: string, folders: string[] }
     let siteConfigs = [];
@@ -1720,15 +1736,6 @@
     // ============================================
     // Filter Helpers
     // ============================================
-    function getFileTypeCategory(fileName) {
-        const ext = String(fileName || "").split(".").pop().toLowerCase();
-        if (["xls", "xlsx", "xlsm", "xlsb", "csv"].includes(ext)) return "excel";
-        if (["doc", "docx", "dot", "dotx"].includes(ext)) return "word";
-        if (["ppt", "pptx", "pptm", "pps", "ppsx"].includes(ext)) return "powerpoint";
-        if (ext === "pdf") return "pdf";
-        return "other";
-    }
-
     function applyFilter(files) {
         const selectedSite = siteFilterSelect.value;
         const selectedFolderKey = folderFilterSelect.value;
@@ -1890,42 +1897,8 @@
         else settingsStatusEl.classList.remove("sp-hidden");
     }
 
-    function normalizeSearchInput(value) {
-        return String(value || "")
-            .replace(/[()（）{}[\]【】「」『』.·。_\-]/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-
-    function sanitizeSearchTerm(term) {
-        return term.replace(/["'*]/g, "").trim();
-    }
-
-    function matchesAllSearchTerms(text, searchTerms) {
-        // Normalize using NFKC to convert full-width alphanumeric to half-width,
-        // and half-width katakana to full-width, ensuring robust Japanese string matching.
-        const value = String(text || "").normalize('NFKC').toLowerCase();
-        return searchTerms.every(function (term) {
-            return value.includes(term.normalize('NFKC').toLowerCase());
-        });
-    }
-
-    function encodeSharePointPath(path) {
-        return encodeURIComponent(String(path || "").replace(/'/g, "''"));
-    }
-
-    function encodeODataString(value) {
-        return encodeURIComponent(String(value || "").replace(/'/g, "''"));
-    }
-
     function getCheckoutActionIcon(isCheckedOut) {
         return isCheckedOut ? CHECKIN_ICON : CHECKOUT_ICON;
-    }
-
-    function isFileCheckedOut(checkOutType) {
-        const value = parseInt(checkOutType, 10);
-        if (Number.isNaN(value)) return false;
-        return value > 0;
     }
 
     function getCurrentPageFileCandidate() {
@@ -2137,14 +2110,6 @@
         return protocol + encodeURI(webUrl);
     }
 
-    function getOfficeDesktopProtocol(fileName) {
-        const ext = String(fileName || "").split(".").pop().toLowerCase();
-        if (ext === "doc" || ext === "docx") return "ms-word:ofe|u|";
-        if (ext === "xls" || ext === "xlsx" || ext === "xlsm" || ext === "xlsb") return "ms-excel:ofe|u|";
-        if (ext === "ppt" || ext === "pptx" || ext === "pptm") return "ms-powerpoint:ofe|u|";
-        return "";
-    }
-
     function getRawFileUrl(file) {
         if (!file || !file.path) return "";
         return getFileWebUrl(file.path);
@@ -2174,75 +2139,10 @@
         return site ? buildLibraryUrl(site) : "";
     }
 
-    const FILE_ICONS_SVG = {
-        word: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#2B579A"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="13" fill="#fff">W</text></svg>`,
-        excel: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#217346"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="13" fill="#fff">X</text></svg>`,
-        ppt: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#D24726"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="13" fill="#fff">P</text></svg>`,
-        pdf: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><rect width="32" height="32" rx="4" fill="#E33B2E"/><path d="M7 8h12l6 6v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#fff" opacity=".15"/><text x="16" y="22" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="11" fill="#fff">PDF</text></svg>`,
-    };
-
-    function getFileIcon(filename) {
-        const ext = (filename || "").split(".").pop().toLowerCase();
-        if (["doc", "docx", "dot", "dotx"].includes(ext)) return FILE_ICONS_SVG.word;
-        if (["xls", "xlsx", "xlsm", "xlsb", "csv"].includes(ext)) return FILE_ICONS_SVG.excel;
-        if (["ppt", "pptx", "pptm", "pps", "ppsx"].includes(ext)) return FILE_ICONS_SVG.ppt;
-        if (ext === "pdf") return FILE_ICONS_SVG.pdf;
-        const emojiIcons = {
-            txt: "📄", md: "📄", json: "📄", xml: "📄",
-            jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", svg: "🖼️",
-            mp4: "🎬", avi: "🎬", mov: "🎬",
-            mp3: "🎵", wav: "🎵",
-            zip: "📦", rar: "📦",
-            html: "🌐", css: "🎨", js: "⚡",
-            py: "🐍", java: "☕", sql: "🗃️"
-        };
-        return emojiIcons[ext] || "📄";
-    }
-
-    function formatFileSize(bytes) {
-        if (!bytes || bytes === 0) return "";
-        var units = ["B", "KB", "MB", "GB"];
-        var i = 0, size = bytes;
-        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-        return size.toFixed(1) + " " + units[i];
-    }
-
     function highlightText(text, query) {
         if (!query) return text;
         var regex = new RegExp("(" + escapeRegex(query) + ")", "gi");
         return text.replace(regex, '<span class="sp-highlight">$1</span>');
     }
 
-    function escapeHtml(str) {
-        var div = document.createElement("div");
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
-    function escapeRegex(str) {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    }
-
-    function formatEditorName(raw) {
-        if (!raw) return "";
-        const parts = String(raw).split("|");
-        for (let part of parts) {
-            const trimmed = part.trim();
-            if (trimmed && !trimmed.includes("@") && !trimmed.includes("i:0#.f")) {
-                return trimmed;
-            }
-        }
-        return parts.length > 1 ? parts[1].trim() : parts[0].trim();
-    }
-
-    function formatDate(dateString) {
-        if (!dateString) return "";
-        try {
-            const d = new Date(dateString);
-            if (isNaN(d.getTime())) return dateString;
-            return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        } catch(e) {
-            return dateString;
-        }
-    }
 })();

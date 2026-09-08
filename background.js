@@ -14,7 +14,7 @@ chrome.action.onClicked.addListener(async (tab) => {
         });
         await chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: ["content.js"]
+            files: ["content-utils.js", "content.js"]
         });
     } catch (e) {
         console.error("Failed to inject content script:", e);
