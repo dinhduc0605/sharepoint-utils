@@ -994,7 +994,22 @@
         try {
             const fileUrl = getCurrentPageFileDetailsUrl(file);
             if (fileUrl) {
-                await hydrateFileMetadata(file);
+                const fileDataResponse = await bgFetchWithTimeout(fileUrl, {
+                    method: "GET",
+                    headers: { "Accept": "application/json;odata=verbose" }
+                }, CURRENT_FILE_METADATA_TIMEOUT_MS);
+                const details = fileDataResponse?.d;
+                if (details) {
+                    file.name = details.Name || file.name;
+                    file.path = details.ServerRelativeUrl || file.path;
+                    file.size = parseInt(details.Length || 0, 10);
+                    file.modified = details.TimeLastModified || "";
+                    file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
+                    file.editor = details.ModifiedBy?.Title || "";
+                    file.metadataLoaded = true;
+                } else {
+                    file.metadataError = true;
+                }
             } else {
                 file.metadataError = true;
             }
@@ -1143,10 +1158,7 @@
                 size: parseInt(getVal("Size") || "0", 10),
                 modified: getVal("LastModifiedTime") || "",
                 editor: getVal("EditorOWSUSER") || "",
-                isCheckedOut: false,
-                checkoutState: "unknown",
-                metadataLoaded: false,
-                metadataError: false
+                isCheckedOut: false
             });
             });
         });
@@ -1450,7 +1462,7 @@
                 '</div>' +
                 '<div class="sp-file-actions">' +
                 (canOpenInDesktopApp(file) ? '<button type="button" class="sp-action-btn sp-action-desktop" title="Open in desktop app" aria-label="Open in desktop app">🖥️</button>' : '') +
-                '<button type="button" class="sp-action-btn sp-action-checkout" title="' + (file.checkoutState === "unknown" ? 'Check checkout status' : (file.isCheckedOut ? 'Check in file' : 'Check out file')) + '" aria-label="' + (file.checkoutState === "unknown" ? 'Check checkout status' : (file.isCheckedOut ? 'Check in file' : 'Check out file')) + '">' + (file.checkoutState === "unknown" ? "🔄" : getCheckoutActionIcon(file.isCheckedOut)) + '</button>' +
+                '<button type="button" class="sp-action-btn sp-action-checkout" title="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '" aria-label="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '">' + getCheckoutActionIcon(file.isCheckedOut) + '</button>' +
                 '<button type="button" class="sp-action-btn sp-action-share" title="Copy share link" aria-label="Copy share link">🔗</button>' +
                 '<button type="button" class="sp-action-btn sp-action-favorite" title="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '" aria-label="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '">' + (isFavoriteFile(file) ? "⭐" : "☆") + '</button>' +
                 '</div>';
@@ -1540,14 +1552,10 @@
         buttonEl.textContent = "⏳";
 
         try {
-            if (file.checkoutState === "unknown") {
-                await hydrateFileMetadata(file);
-            }
             const nextAction = file.isCheckedOut ? "checkIn" : "checkOut";
             if (nextAction === "checkOut") {
                 await sharePointCheckOut(file);
                 file.isCheckedOut = true;
-                file.checkoutState = "checkedOut";
                 buttonEl.textContent = getCheckoutActionIcon(true);
                 buttonEl.title = "Check in file";
                 buttonEl.setAttribute("aria-label", "Check in file");
@@ -1555,14 +1563,11 @@
             } else {
                 const comment = await promptForCheckInComment(file.name);
                 if (comment === null) {
-                    buttonEl.textContent = getCheckoutActionIcon(file.isCheckedOut);
-                    buttonEl.title = file.isCheckedOut ? "Check in file" : "Check out file";
-                    buttonEl.setAttribute("aria-label", buttonEl.title);
+                    buttonEl.textContent = originalLabel;
                     return;
                 }
                 await sharePointCheckIn(file, comment);
                 file.isCheckedOut = false;
-                file.checkoutState = "available";
                 buttonEl.textContent = getCheckoutActionIcon(false);
                 buttonEl.title = "Check out file";
                 buttonEl.setAttribute("aria-label", "Check out file");
@@ -1580,34 +1585,6 @@
         } finally {
             buttonEl.disabled = false;
         }
-    }
-
-    async function hydrateFileMetadata(file) {
-        const fileUrl = getCurrentPageFileDetailsUrl(file);
-        if (!fileUrl) {
-            throw new Error("File details are unavailable");
-        }
-
-        const fileDataResponse = await bgFetchWithTimeout(fileUrl, {
-            method: "GET",
-            headers: { "Accept": "application/json;odata=verbose" }
-        }, CURRENT_FILE_METADATA_TIMEOUT_MS);
-        const details = fileDataResponse?.d;
-        if (!details) {
-            throw new Error("File details are unavailable");
-        }
-
-        file.name = details.Name || file.name;
-        file.path = details.ServerRelativeUrl || file.path;
-        file.size = parseInt(details.Length || 0, 10);
-        file.modified = details.TimeLastModified || "";
-        file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
-        file.checkoutState = file.isCheckedOut ? "checkedOut" : "available";
-        file.editor = details.ModifiedBy?.Title || "";
-        file.metadataLoaded = true;
-        file.metadataLoading = false;
-        file.metadataError = false;
-        return file;
     }
 
     async function sharePointCheckOut(file) {
@@ -1921,7 +1898,6 @@
             size: 0,
             modified: "",
             isCheckedOut: false,
-            checkoutState: "unknown",
             sourceDocId,
             siteUrl,
             metadataLoading: true,

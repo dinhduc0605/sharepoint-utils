@@ -23,9 +23,9 @@ test("escapes SharePoint OData values", () => {
 });
 
 test("maps checkout enum values correctly", () => {
-    assert.equal(utils.isFileCheckedOut(0), false);
+    assert.equal(utils.isFileCheckedOut(0), true);
     assert.equal(utils.isFileCheckedOut(1), true);
-    assert.equal(utils.isFileCheckedOut(2), true);
+    assert.equal(utils.isFileCheckedOut(2), false);
     assert.equal(utils.isFileCheckedOut("invalid"), false);
 });
 

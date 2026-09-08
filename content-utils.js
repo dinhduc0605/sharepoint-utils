@@ -39,7 +39,7 @@
     function isFileCheckedOut(checkOutType) {
         const value = parseInt(checkOutType, 10);
         if (Number.isNaN(value)) return false;
-        return value > 0;
+        return value !== 2;
     }
 
     function getOfficeDesktopProtocol(fileName) {
