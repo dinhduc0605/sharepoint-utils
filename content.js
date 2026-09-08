@@ -134,6 +134,20 @@
                     <button type="button" class="sp-search-close" id="sp-settings-close-btn" title="Close Settings" aria-label="Close settings">✕</button>
                 </div>
                 <div class="sp-settings-content">
+                    <div class="sp-settings-section sp-settings-backup-section">
+                        <div class="sp-settings-label">Backup & Sync</div>
+                        <label class="sp-sync-toggle">
+                            <input type="checkbox" id="sp-sync-config-toggle">
+                            <span>Sync sites and folders across Chrome</span>
+                        </label>
+                        <div class="sp-backup-actions">
+                            <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-export-config-btn">Export JSON</button>
+                            <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-import-config-btn">Import JSON</button>
+                            <input type="file" id="sp-import-config-input" accept="application/json,.json" class="sp-file-input-hidden">
+                        </div>
+                        <div class="sp-refresh-hint">When enabled, this device's current config is uploaded once; on later opens, synced config replaces local config.</div>
+                        <div class="sp-refresh-hint">Export creates a portable backup of sites, libraries, folders, and the default site.</div>
+                    </div>
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Add Site</div>
                         <div class="sp-path-add-row">
@@ -148,19 +162,6 @@
                         <div class="sp-path-list" id="sp-site-list">
                             <div class="sp-path-list-empty">No sites added yet.</div>
                         </div>
-                    </div>
-                    <div class="sp-settings-section sp-settings-backup-section">
-                        <div class="sp-settings-label">Backup & Sync</div>
-                        <label class="sp-sync-toggle">
-                            <input type="checkbox" id="sp-sync-config-toggle">
-                            <span>Sync sites and folders across Chrome</span>
-                        </label>
-                        <div class="sp-backup-actions">
-                            <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-export-config-btn">Export JSON</button>
-                            <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-import-config-btn">Import JSON</button>
-                            <input type="file" id="sp-import-config-input" accept="application/json,.json" class="sp-file-input-hidden">
-                        </div>
-                        <div class="sp-refresh-hint">Export creates a portable backup of sites, libraries, folders, and the default site.</div>
                     </div>
                     <div class="sp-refresh-hint" id="sp-selected-library-hint"></div>
                     <div class="sp-settings-section">
