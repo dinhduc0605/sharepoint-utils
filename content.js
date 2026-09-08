@@ -80,6 +80,16 @@
                                 <option value="pdf">PDF</option>
                                 <option value="other">Other</option>
                             </select>
+                            <select class="sp-filter-select sp-filter-inline" id="sp-sort-filter-select" title="Sort results">
+                                <option value="relevance">Relevance</option>
+                                <option value="nameAsc">Name A–Z</option>
+                                <option value="nameDesc">Name Z–A</option>
+                                <option value="modifiedDesc">Newest</option>
+                                <option value="modifiedAsc">Oldest</option>
+                                <option value="sizeDesc">Largest</option>
+                                <option value="sizeAsc">Smallest</option>
+                            </select>
+                            <input type="date" class="sp-filter-date" id="sp-modified-after-filter" title="Modified after">
                         </div>
                     </div>
                 </div>
@@ -221,6 +231,8 @@
     const siteFilterSelect = document.getElementById("sp-site-filter-select");
     const folderFilterSelect = document.getElementById("sp-folder-filter-select");
     const fileTypeFilterSelect = document.getElementById("sp-type-filter-select");
+    const sortFilterSelect = document.getElementById("sp-sort-filter-select");
+    const modifiedAfterInput = document.getElementById("sp-modified-after-filter");
     const settingsIconBtn = document.getElementById("sp-settings-icon-btn");
     const settingsOverlay = document.getElementById("sp-settings-overlay");
     const settingsCloseBtn = document.getElementById("sp-settings-close-btn");
@@ -360,19 +372,31 @@
     siteFilterSelect.addEventListener("change", () => {
         updateFolderFilterOptions();
         if (lastSearchResults.length > 0 && lastQuery) {
-            displayResults(applyFilter(lastSearchResults), lastQuery);
+            displayResults(getVisibleResults(), lastQuery);
         }
     });
 
     folderFilterSelect.addEventListener("change", () => {
         if (lastSearchResults.length > 0 && lastQuery) {
-            displayResults(applyFilter(lastSearchResults), lastQuery);
+            displayResults(getVisibleResults(), lastQuery);
         }
     });
 
     fileTypeFilterSelect.addEventListener("change", () => {
         if (lastSearchResults.length > 0 && lastQuery) {
-            displayResults(applyFilter(lastSearchResults), lastQuery);
+            displayResults(getVisibleResults(), lastQuery);
+        }
+    });
+
+    sortFilterSelect.addEventListener("change", () => {
+        if (lastSearchResults.length > 0 && lastQuery) {
+            displayResults(getVisibleResults(), lastQuery);
+        }
+    });
+
+    modifiedAfterInput.addEventListener("change", () => {
+        if (lastSearchResults.length > 0 && lastQuery) {
+            displayResults(getVisibleResults(), lastQuery);
         }
     });
 
@@ -934,7 +958,7 @@
                 hasMore: searchPage.hasMore,
                 errors: searchPage.errors
             };
-            displayResults(applyFilter(lastSearchResults), currentQuery);
+            displayResults(getVisibleResults(), currentQuery);
         } catch (error) {
             console.error("Search error:", error);
             if (error.message.includes("NO_SP_TAB")) {
@@ -1257,7 +1281,7 @@
             searchState.sitePages = searchPage.sitePages;
             searchState.hasMore = searchPage.hasMore;
             searchState.errors = (searchState.errors || []).concat(searchPage.errors || []);
-            displayResults(applyFilter(lastSearchResults), searchState.query);
+            displayResults(getVisibleResults(), searchState.query);
         } catch (error) {
             console.error("Load more error:", error);
             showStatus("error", "❌ Could not load more results: " + error.message);
@@ -1474,6 +1498,9 @@
         const selectedSite = siteFilterSelect.value;
         const selectedFolderKey = folderFilterSelect.value;
         const selectedType = fileTypeFilterSelect.value;
+        const modifiedAfter = modifiedAfterInput.value
+            ? new Date(modifiedAfterInput.value + "T00:00:00")
+            : null;
 
         return files.filter(function (file) {
             if (selectedSite && file.site !== selectedSite) {
@@ -1491,8 +1518,42 @@
             if (selectedType && getFileTypeCategory(file.name) !== selectedType) {
                 return false;
             }
+            if (modifiedAfter && !Number.isNaN(modifiedAfter.getTime())) {
+                const fileModified = new Date(file.modified || "");
+                if (Number.isNaN(fileModified.getTime()) || fileModified < modifiedAfter) {
+                    return false;
+                }
+            }
             return true;
         });
+    }
+
+    function sortResults(files) {
+        const sortMode = sortFilterSelect.value || "relevance";
+        if (sortMode === "relevance") return files;
+
+        return files.slice().sort(function (a, b) {
+            if (sortMode === "nameAsc" || sortMode === "nameDesc") {
+                const direction = sortMode === "nameAsc" ? 1 : -1;
+                return direction * String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+            }
+
+            if (sortMode === "sizeAsc" || sortMode === "sizeDesc") {
+                const direction = sortMode === "sizeAsc" ? 1 : -1;
+                return direction * ((Number(a.size) || 0) - (Number(b.size) || 0));
+            }
+
+            const aTime = new Date(a.modified || "").getTime();
+            const bTime = new Date(b.modified || "").getTime();
+            const safeATime = Number.isNaN(aTime) ? 0 : aTime;
+            const safeBTime = Number.isNaN(bTime) ? 0 : bTime;
+            const direction = sortMode === "modifiedAsc" ? 1 : -1;
+            return direction * (safeATime - safeBTime);
+        });
+    }
+
+    function getVisibleResults() {
+        return sortResults(applyFilter(lastSearchResults));
     }
 
     function updateSearchFilterOptions() {

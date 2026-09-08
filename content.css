@@ -278,6 +278,24 @@
     padding: 0 28px 0 10px;
     font-size: 12px;
 }
+.sp-filter-date {
+    height: 40px;
+    width: 126px;
+    box-sizing: border-box;
+    padding: 0 9px;
+    border: 1px solid var(--sp-border);
+    border-radius: 8px;
+    background: var(--sp-bg-card);
+    color: var(--sp-text-primary);
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+}
+.sp-filter-date:focus,
+.sp-filter-date:hover {
+    border-color: var(--sp-border-hover);
+    background-color: var(--sp-bg-hover);
+}
 .sp-filter-select {
     min-width: 0;
     box-sizing: border-box;
