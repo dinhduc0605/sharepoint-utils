@@ -755,13 +755,13 @@
     }
 
     function useCurrentSiteUrl() {
-        const site = normalizeSiteInput(window.location.href);
-        if (!site) {
+        const location = parseSiteLocation(window.location.href);
+        if (!location?.site) {
             showSettingsStatus("error", "❌ Could not detect a SharePoint site from the current URL.");
             setTimeout(() => showSettingsStatus("", ""), 3000);
             return;
         }
-        siteInput.value = site;
+        siteInput.value = location.origin + "/" + location.sitePathPrefix + "/" + location.site;
         siteInput.focus();
     }
 
@@ -1266,7 +1266,7 @@
             path: String(file?.path || ""),
             site: String(file?.site || ""),
             siteUrl: String(file?.siteUrl || ""),
-            url: String(url || getViewFileUrl(file?.path || "")),
+            url: String(url || getViewFileUrl(file?.path || "", file?.siteUrl || "")),
             size: Number(file?.size) || 0,
             modified: String(file?.modified || "")
         };
@@ -1292,7 +1292,7 @@
             favoriteFiles.splice(existingIndex, 1);
             showStatus("success", '🟢 Removed "' + escapeHtml(file.name) + '" from favorites');
         } else {
-            favoriteFiles.unshift(toStoredFile(file, getViewFileUrl(file.path)));
+            favoriteFiles.unshift(toStoredFile(file, getViewFileUrl(file.path, file.siteUrl)));
             favoriteFiles = favoriteFiles.slice(0, 50);
             showStatus("success", '🟢 Added "' + escapeHtml(file.name) + '" to favorites');
         }
@@ -1417,7 +1417,7 @@
         showStatus("success", '🟢 Found ' + files.length + ' file(s) matching "' + escapeHtml(query) + '"' + partialMessage);
 
         files.forEach(function (file) {
-            const viewFileUrl = getViewFileUrl(file.path);
+            const viewFileUrl = getViewFileUrl(file.path, file.siteUrl);
 
             const item = document.createElement("div");
             item.className = "sp-file-item";
@@ -1840,13 +1840,13 @@
     // ============================================
     // URL Helpers
     // ============================================
-    function getViewFileUrl(serverRelativePath) {
-        return getFileWebUrl(serverRelativePath) + "?web=1";
+    function getViewFileUrl(serverRelativePath, siteUrl = "") {
+        return getFileWebUrl(serverRelativePath, siteUrl) + "?web=1";
     }
 
     function getCurrentPageFileShareUrl(file) {
         if (file?.path) {
-            return getViewFileUrl(file.path);
+            return getViewFileUrl(file.path, file.siteUrl);
         }
         // A sourcedoc-only viewer URL is still a useful share target while
         // SharePoint metadata is loading or unavailable.
@@ -1954,6 +1954,7 @@
         const wrapper = document.createElement("div");
         const serverRelativePath = file?.path || "";
         const site = file?.site || getSiteConfigByServerRelativePath(serverRelativePath)?.site || getSiteSlugFromServerRelativePath(serverRelativePath);
+        const siteUrl = file?.siteUrl || "";
         const libraryPath = site ? buildLibraryPath(site) : "";
         const parentFolderPath = getFolderPath(serverRelativePath, file?.name || "");
         if (!libraryPath || !parentFolderPath.startsWith(libraryPath)) {
@@ -1966,7 +1967,7 @@
         const segments = relativePath.split("/").filter(Boolean);
 
         if (segments.length === 0) {
-            wrapper.appendChild(createFolderLink("/", getFolderUrlFromFolderPath(parentFolderPath)));
+            wrapper.appendChild(createFolderLink("/", getFolderUrlFromFolderPath(parentFolderPath, siteUrl)));
             return wrapper;
         }
 
@@ -1976,7 +1977,7 @@
             if (index > 0) {
                 wrapper.appendChild(document.createTextNode(" / "));
             }
-            wrapper.appendChild(createFolderLink(segment, getFolderUrlFromFolderPath(libraryPath + currentPath)));
+            wrapper.appendChild(createFolderLink(segment, getFolderUrlFromFolderPath(libraryPath + currentPath, siteUrl)));
         });
 
         return wrapper;
@@ -2000,8 +2001,22 @@
         return getFolderUrlFromFolderPath(parentFolderPath);
     }
 
-    function getFolderUrlFromFolderPath(folderPath) {
-        const libraryRootUrl = getLibraryRootUrlByPath(folderPath);
+    function getFolderUrlFromFolderPath(folderPath, siteUrl = "") {
+        let libraryRootUrl = getLibraryRootUrlByPath(folderPath);
+        if (!libraryRootUrl && siteUrl) {
+            try {
+                const parsedSiteUrl = new URL(siteUrl);
+                const sitePath = parsedSiteUrl.pathname.replace(/\/$/, "");
+                const relativeLibrary = folderPath.startsWith(sitePath + "/")
+                    ? folderPath.slice(sitePath.length + 1).split("/")[0]
+                    : "";
+                if (relativeLibrary) {
+                    libraryRootUrl = parsedSiteUrl.origin + sitePath + "/" + relativeLibrary;
+                }
+            } catch (e) {
+                // Use the configured library URL when available.
+            }
+        }
         return libraryRootUrl + "/Forms/AllItems.aspx?id=" + encodeURIComponent(folderPath);
     }
 
@@ -2112,10 +2127,10 @@
 
     function getRawFileUrl(file) {
         if (!file || !file.path) return "";
-        return getFileWebUrl(file.path);
+        return getFileWebUrl(file.path, file.siteUrl);
     }
 
-    function getFileWebUrl(serverRelativePath) {
+    function getFileWebUrl(serverRelativePath, siteUrl = "") {
         const path = String(serverRelativePath || "");
         if (!path) return "";
 
@@ -2127,7 +2142,8 @@
         }
 
         try {
-            return TENANT_ORIGIN + path;
+            const currentSiteUrl = siteUrl ? new URL(siteUrl) : null;
+            return (currentSiteUrl ? currentSiteUrl.origin : TENANT_ORIGIN) + path;
         } catch (e) {
             return path;
         }
