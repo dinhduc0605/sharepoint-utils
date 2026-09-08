@@ -12,6 +12,8 @@
     // CONFIG
     // ============================================
     const TENANT_ORIGIN = "https://dxcportal.sharepoint.com";
+    const DEFAULT_LIBRARY_NAME = "Shared Documents";
+    const DEFAULT_SITE_PATH_PREFIX = "sites";
     const DEFAULT_SITE = "msteams_268a65";
 
     const MIN_QUERY_LENGTH = 3;
@@ -102,7 +104,7 @@
                             <button class="sp-add-path-btn" id="sp-add-site-btn">+ Add</button>
                             <button class="sp-add-path-btn" id="sp-current-site-btn">Current Site</button>
                         </div>
-                        <div class="sp-refresh-hint">Library URL format: ${TENANT_ORIGIN}/sites/{site}/Shared Documents</div>
+                        <div class="sp-refresh-hint">Enter a site name or full library URL, e.g. ${TENANT_ORIGIN}/sites/{site}/Shared Documents</div>
                     </div>
                     <div class="sp-settings-section">
                         <div class="sp-settings-label">Sites</div>
@@ -400,37 +402,104 @@
     // ============================================
     // Site & Path Management
     // ============================================
-    function normalizeSiteInput(rawInput) {
+    function normalizeOrigin(rawOrigin) {
+        try {
+            const url = new URL(String(rawOrigin || "").trim());
+            if (!/^https?:$/i.test(url.protocol)) return "";
+            return url.origin;
+        } catch (e) {
+            return "";
+        }
+    }
+
+    function parseSiteLocation(rawInput) {
         const value = String(rawInput || "").trim();
-        if (!value) return "";
+        if (!value) return null;
 
         if (/^https?:\/\//i.test(value)) {
             try {
                 const url = new URL(value);
-                const match = decodeURIComponent(url.pathname).match(/^\/sites\/([^/]+)/i);
-                return match ? match[1] : "";
+                const parts = decodeURIComponent(url.pathname).split("/").filter(Boolean);
+                const markerIndex = parts.findIndex(part => /^(sites|teams)$/i.test(part));
+                if (markerIndex < 0 || !parts[markerIndex + 1]) return null;
+                return {
+                    origin: url.origin,
+                    site: parts[markerIndex + 1],
+                    sitePathPrefix: parts[markerIndex].toLowerCase(),
+                    library: parts[markerIndex + 2] || DEFAULT_LIBRARY_NAME
+                };
             } catch (e) {
-                return "";
+                return null;
             }
         }
 
-        return value
+        const site = value
             .replace(/^\/+/, "")
-            .replace(/^sites\//i, "")
+            .replace(/^(sites|teams)\//i, "")
             .replace(/\/.*$/, "")
             .trim();
+        return site ? {
+            origin: TENANT_ORIGIN,
+            site,
+            sitePathPrefix: DEFAULT_SITE_PATH_PREFIX,
+            library: DEFAULT_LIBRARY_NAME
+        } : null;
     }
 
-    function buildSiteUrl(site) {
-        return TENANT_ORIGIN + "/sites/" + site;
+    function normalizeSiteInput(rawInput) {
+        return parseSiteLocation(rawInput)?.site || "";
     }
 
-    function buildLibraryPath(site) {
-        return "/sites/" + site + "/Shared Documents";
+    function normalizeSiteConfig(rawConfig) {
+        const input = rawConfig || {};
+        const parsed = parseSiteLocation(input.libraryUrl || input.site || input.url);
+        const site = normalizeSiteInput(input.site || input.libraryUrl || input.url);
+        if (!site) return null;
+        const origin = normalizeOrigin(input.origin) || parsed?.origin || TENANT_ORIGIN;
+        const sitePathPrefix = /^(sites|teams)$/i.test(input.sitePathPrefix || "")
+            ? input.sitePathPrefix.toLowerCase()
+            : (parsed?.sitePathPrefix || DEFAULT_SITE_PATH_PREFIX);
+        const library = String(input.library || parsed?.library || DEFAULT_LIBRARY_NAME).trim() || DEFAULT_LIBRARY_NAME;
+        return {
+            site,
+            folders: Array.isArray(input.folders) ? input.folders.filter(Boolean) : [],
+            origin,
+            sitePathPrefix,
+            library
+        };
     }
 
-    function buildLibraryUrl(site) {
-        return TENANT_ORIGIN + buildLibraryPath(site);
+    function buildSitePath(siteOrConfig) {
+        const config = typeof siteOrConfig === "object"
+            ? siteOrConfig
+            : getSiteConfig(siteOrConfig);
+        const site = config?.site || siteOrConfig || "";
+        const prefix = config?.sitePathPrefix || DEFAULT_SITE_PATH_PREFIX;
+        return "/" + prefix + "/" + site;
+    }
+
+    function buildSiteUrl(siteOrConfig) {
+        const config = typeof siteOrConfig === "object"
+            ? siteOrConfig
+            : getSiteConfig(siteOrConfig);
+        const origin = config?.origin || TENANT_ORIGIN;
+        return origin + buildSitePath(config || siteOrConfig);
+    }
+
+    function buildLibraryPath(siteOrConfig) {
+        const config = typeof siteOrConfig === "object"
+            ? siteOrConfig
+            : getSiteConfig(siteOrConfig);
+        const library = config?.library || DEFAULT_LIBRARY_NAME;
+        return buildSitePath(config || siteOrConfig) + "/" + library;
+    }
+
+    function buildLibraryUrl(siteOrConfig) {
+        const config = typeof siteOrConfig === "object"
+            ? siteOrConfig
+            : getSiteConfig(siteOrConfig);
+        const origin = config?.origin || TENANT_ORIGIN;
+        return origin + buildLibraryPath(config || siteOrConfig);
     }
 
     function getSiteConfig(site) {
@@ -443,12 +512,13 @@
     }
 
     function addSite() {
-        const site = normalizeSiteInput(siteInput.value);
-        if (!site) {
+        const parsed = parseSiteLocation(siteInput.value);
+        if (!parsed?.site) {
             showSettingsStatus("error", "❌ Invalid site name.");
             setTimeout(() => showSettingsStatus("", ""), 3000);
             return;
         }
+        const site = parsed.site;
         if (getSiteConfig(site)) {
             defaultSite = site;
             siteInput.value = "";
@@ -459,7 +529,13 @@
             return;
         }
 
-        siteConfigs.push({ site, folders: [] });
+        siteConfigs.push({
+            site,
+            folders: [],
+            origin: parsed.origin,
+            sitePathPrefix: parsed.sitePathPrefix,
+            library: parsed.library
+        });
         defaultSite = site;
         siteInput.value = "";
         saveSiteConfigs();
@@ -502,6 +578,7 @@
         siteConfigs.forEach(function (siteConfig) {
             const row = document.createElement("div");
             row.className = "sp-path-item" + (siteConfig.site === defaultSite ? " sp-path-item-active" : "");
+            row.title = buildLibraryUrl(siteConfig);
             row.innerHTML =
                 '<button class="sp-site-select-btn" title="Select site">' + escapeHtml(siteConfig.site) + '</button>' +
                 '<input type="radio" class="sp-site-default-radio" name="sp-default-site" title="Default site" ' + (siteConfig.site === defaultSite ? "checked" : "") + '>' +
@@ -538,19 +615,18 @@
                 return typeof item === "string" ? item : item?.path;
             }).filter(Boolean)
             : [];
-        siteConfigs = [{ site: fallbackSite, folders }];
+        siteConfigs = [{
+            site: fallbackSite,
+            folders,
+            origin: TENANT_ORIGIN,
+            sitePathPrefix: DEFAULT_SITE_PATH_PREFIX,
+            library: DEFAULT_LIBRARY_NAME
+        }];
         defaultSite = fallbackSite;
     }
 
     function parseSiteFromLibraryUrl(inputUrl) {
-        if (!inputUrl) return "";
-        try {
-            const pathname = decodeURIComponent(new URL(inputUrl).pathname);
-            const match = pathname.match(/^\/sites\/([^/]+)\/Shared Documents/i);
-            return match ? match[1] : "";
-        } catch (e) {
-            return "";
-        }
+        return parseSiteLocation(inputUrl)?.site || "";
     }
 
     function addPath() {
@@ -745,19 +821,20 @@
 
             if (Array.isArray(data.siteConfigs) && data.siteConfigs.length > 0) {
                 siteConfigs = data.siteConfigs
-                    .map(function (item) {
-                        return {
-                            site: normalizeSiteInput(item?.site),
-                            folders: Array.isArray(item?.folders) ? item.folders.filter(Boolean) : []
-                        };
-                    })
-                    .filter(function (item) { return item.site; });
+                    .map(normalizeSiteConfig)
+                    .filter(Boolean);
             } else {
                 migrateLegacyState(data);
             }
 
             if (siteConfigs.length === 0) {
-                siteConfigs = [{ site: DEFAULT_SITE, folders: [] }];
+                siteConfigs = [{
+                    site: DEFAULT_SITE,
+                    folders: [],
+                    origin: TENANT_ORIGIN,
+                    sitePathPrefix: DEFAULT_SITE_PATH_PREFIX,
+                    library: DEFAULT_LIBRARY_NAME
+                }];
             }
 
             defaultSite = normalizeSiteInput(data.defaultSite) || "";
@@ -1032,9 +1109,12 @@
     }
 
     function getSiteConfigByServerRelativePath(serverRelativePath) {
+        const candidatePath = String(serverRelativePath || "");
+        const lowerPath = candidatePath.toLowerCase();
         return siteConfigs.find(function (siteConfig) {
-            const libraryPath = buildLibraryPath(siteConfig.site);
-            return serverRelativePath === libraryPath || serverRelativePath.startsWith(libraryPath + "/");
+            const libraryPath = buildLibraryPath(siteConfig);
+            const lowerLibraryPath = libraryPath.toLowerCase();
+            return lowerPath === lowerLibraryPath || lowerPath.startsWith(lowerLibraryPath + "/");
         }) || null;
     }
 
@@ -1495,8 +1575,8 @@
 
     function getSiteSlugFromServerRelativePath(serverRelativePath) {
         if (!serverRelativePath) return "";
-        const match = String(serverRelativePath).match(/^\/sites\/([^/]+)/i);
-        return match ? match[1] : "";
+        const match = String(serverRelativePath).match(/^\/(sites|teams)\/([^/]+)/i);
+        return match ? match[2] : "";
     }
 
     function getFolderPath(serverRelativePath, fileName) {
@@ -1588,9 +1668,7 @@
             const decoded = decodeURIComponent(rawPath);
             try {
                 const absoluteUrl = new URL(decoded);
-                if (absoluteUrl.origin === TENANT_ORIGIN) {
-                    return decodeURIComponent(absoluteUrl.pathname);
-                }
+                return decodeURIComponent(absoluteUrl.pathname);
             } catch (e) {
                 // The value is a relative server path, which is expected here.
             }

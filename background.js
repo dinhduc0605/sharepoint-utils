@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === "checkConnection") {
-        chrome.tabs.query({ url: "https://dxcportal.sharepoint.com/*" })
+        chrome.tabs.query({ url: "https://*.sharepoint.com/*" })
             .then(tabs => sendResponse({ connected: tabs && tabs.length > 0 }))
             .catch(() => sendResponse({ connected: false }));
         return true;
@@ -39,8 +39,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function handleSharePointFetch(url, options = {}, preferredTabId = null) {
+    let targetOrigin;
+    try {
+        targetOrigin = new URL(url).origin;
+    } catch (e) {
+        throw new Error("INVALID_SHAREPOINT_URL");
+    }
+
     const tabs = await chrome.tabs.query({
-        url: "https://dxcportal.sharepoint.com/*"
+        url: targetOrigin + "/*"
     });
 
     if (!tabs || tabs.length === 0) {

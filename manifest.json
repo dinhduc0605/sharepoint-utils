@@ -11,8 +11,7 @@
         "tabs"
     ],
     "host_permissions": [
-        "https://dxcportal.sharepoint.com/*",
-        "<all_urls>"
+        "https://*.sharepoint.com/*"
     ],
     "background": {
         "service_worker": "background.js"
