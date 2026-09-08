@@ -18,6 +18,7 @@
 
     const MIN_QUERY_LENGTH = 3;
     const CURRENT_FILE_METADATA_TIMEOUT_MS = 9000;
+    const SEARCH_PAGE_SIZE = 100;
     const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb", "ppt", "pptx", "pptm"]);
 
     // siteConfigs: array of { site: string, folders: string[] }
@@ -26,6 +27,7 @@
     let isLoading = false;
     let lastSearchResults = []; // store last search results for re-filtering
     let lastQuery = "";
+    let searchState = null;
     let currentPageFile = null;
 
     // ============================================
@@ -333,6 +335,7 @@
             showStatus("", "");
             lastSearchResults = [];
             lastQuery = "";
+            searchState = null;
         }
     });
 
@@ -349,6 +352,7 @@
         showStatus("", "");
         lastSearchResults = [];
         lastQuery = "";
+        searchState = null;
         searchInput.focus();
     });
 
@@ -931,14 +935,20 @@
             showStatus("loading", 'Searching SharePoint for "' + escapeHtml(query) + '"...');
 
             const selectedSite = siteFilterSelect.value;
-            const matched = await searchFilesByName(query, selectedSite);
+            const searchPage = await searchFilesByName(query, selectedSite, 0);
 
             const currentQuery = searchInput.value.trim();
             if (currentQuery.length < MIN_QUERY_LENGTH) { showStatus("", ""); return; }
 
-            lastSearchResults = matched;
+            lastSearchResults = searchPage.files;
             lastQuery = currentQuery;
-            displayResults(applyFilter(matched), currentQuery);
+            searchState = {
+                query: currentQuery,
+                selectedSite,
+                nextStartRow: searchPage.nextStartRow,
+                hasMore: searchPage.hasMore
+            };
+            displayResults(applyFilter(lastSearchResults), currentQuery);
         } catch (error) {
             console.error("Search error:", error);
             if (error.message.includes("NO_SP_TAB")) {
@@ -955,7 +965,7 @@
         }
     }
 
-    async function searchFilesByName(query, selectedSite) {
+    async function searchFilesByName(query, selectedSite, startRow = 0) {
         const rawQuery = String(query || "").replace(/["']/g, "").trim();
         const normalized = normalizeSearchInput(rawQuery);
         const searchTerms = normalized
@@ -989,7 +999,8 @@
         const baseSite = selectedSite || (siteConfigs.length > 0 ? siteConfigs[0].site : null);
         const siteUrl = baseSite ? buildSiteUrl(baseSite) : TENANT_ORIGIN;
 
-        const rows = await fetchSearchRows(queryText, siteUrl);
+        const page = await fetchSearchRows(queryText, siteUrl, startRow);
+        const rows = page.rows;
         const uniqueFiles = new Map();
 
         rows.forEach(function (row) {
@@ -1036,36 +1047,34 @@
             });
         });
 
-        return Array.from(uniqueFiles.values());
+        return {
+            files: Array.from(uniqueFiles.values()),
+            nextStartRow: page.nextStartRow,
+            hasMore: page.hasMore
+        };
     }
 
-    async function fetchSearchRows(queryText, apiBase) {
-        const rows = [];
-        const rowLimit = 500;
-        const maxRows = 500;
+    async function fetchSearchRows(queryText, apiBase, startRow = 0) {
+        const rowLimit = SEARCH_PAGE_SIZE;
         const baseUrl = apiBase || TENANT_ORIGIN;
+        const searchUrl = baseUrl +
+            "/_api/search/query?querytext='" + encodeURIComponent(queryText) +
+            "'&startrow=" + startRow +
+            "&rowlimit=" + rowLimit +
+            "&selectproperties='Title,Path,Filename,FileLeafRef,LastModifiedTime,Size,EditorOWSUSER,ContentClass,FileExtension,IsDocument,IsContainer'" +
+            "&sortlist='IsContainer:descending,Rank:descending'";
 
-        for (let startRow = 0; startRow < maxRows; startRow += rowLimit) {
-            const searchUrl = baseUrl +
-                "/_api/search/query?querytext='" + encodeURIComponent(queryText) +
-                "'&startrow=" + startRow +
-                "&rowlimit=" + rowLimit +
-                "&selectproperties='Title,Path,Filename,FileLeafRef,LastModifiedTime,Size,EditorOWSUSER,ContentClass,FileExtension,IsDocument,IsContainer'" +
-                "&sortlist='IsContainer:descending,Rank:descending'";
+        const searchData = await bgFetch(searchUrl, {
+            method: "GET",
+            headers: { "Accept": "application/json;odata=verbose" }
+        });
 
-            const searchData = await bgFetch(searchUrl, {
-                method: "GET",
-                headers: { "Accept": "application/json;odata=verbose" }
-            });
-
-            const pageRows = searchData?.d?.query?.PrimaryQueryResult?.RelevantResults?.Table?.Rows?.results || [];
-            rows.push(...pageRows);
-            if (pageRows.length < rowLimit) {
-                break;
-            }
-        }
-
-        return rows;
+        const rows = searchData?.d?.query?.PrimaryQueryResult?.RelevantResults?.Table?.Rows?.results || [];
+        return {
+            rows,
+            nextStartRow: startRow + rows.length,
+            hasMore: rows.length >= rowLimit
+        };
     }
 
     // ============================================
@@ -1147,6 +1156,7 @@
                 '<div class="sp-no-results-icon">🔍</div>' +
                 '<div class="sp-no-results-text">No files found matching "<strong>' +
                 escapeHtml(query) + '</strong>"</div></div>';
+            appendLoadMoreButton();
             return;
         }
 
@@ -1201,6 +1211,50 @@
 
             resultsEl.appendChild(item);
         });
+
+        appendLoadMoreButton();
+    }
+
+    function appendLoadMoreButton() {
+        if (!searchState?.hasMore) return;
+        const loadMoreBtn = document.createElement("button");
+        loadMoreBtn.type = "button";
+        loadMoreBtn.className = "sp-load-more-btn";
+        loadMoreBtn.textContent = "Load more results";
+        loadMoreBtn.addEventListener("click", loadMoreResults);
+        resultsEl.appendChild(loadMoreBtn);
+    }
+
+    async function loadMoreResults() {
+        if (isLoading || !searchState?.hasMore || !lastQuery) return;
+
+        const queryAtStart = searchInput.value.trim();
+        if (queryAtStart !== searchState.query) return;
+
+        isLoading = true;
+        showStatus("loading", 'Loading more results for "' + escapeHtml(searchState.query) + '"...');
+        try {
+            const searchPage = await searchFilesByName(
+                searchState.query,
+                searchState.selectedSite,
+                searchState.nextStartRow
+            );
+            const existingPaths = new Set(lastSearchResults.map(file => file.path.toLowerCase()));
+            searchPage.files.forEach(file => {
+                if (!existingPaths.has(file.path.toLowerCase())) {
+                    lastSearchResults.push(file);
+                    existingPaths.add(file.path.toLowerCase());
+                }
+            });
+            searchState.nextStartRow = searchPage.nextStartRow;
+            searchState.hasMore = searchPage.hasMore;
+            displayResults(applyFilter(lastSearchResults), searchState.query);
+        } catch (error) {
+            console.error("Load more error:", error);
+            showStatus("error", "❌ Could not load more results: " + error.message);
+        } finally {
+            isLoading = false;
+        }
     }
 
     async function toggleFileCheckout(file, buttonEl) {

@@ -472,6 +472,24 @@
     font-size: 13px; 
 }
 
+.sp-load-more-btn {
+    align-self: center;
+    margin: 8px 0 4px;
+    padding: 9px 18px;
+    border: 1px solid var(--sp-border-hover);
+    border-radius: 8px;
+    background: var(--sp-bg-card);
+    color: var(--sp-text-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--sp-transition);
+}
+.sp-load-more-btn:hover {
+    background: var(--sp-bg-hover);
+    transform: translateY(-0.5px);
+}
+
 /* Search empty state (shown before any search) */
 .sp-search-empty-state {
     display: flex;
