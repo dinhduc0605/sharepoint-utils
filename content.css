@@ -450,6 +450,14 @@
     transform: scale(1.15);
     opacity: 1;
 }
+.sp-action-btn:disabled {
+    cursor: wait;
+    opacity: 0.3;
+}
+.sp-action-btn:disabled:hover {
+    transform: none;
+    opacity: 0.3;
+}
 .sp-no-results { 
     text-align: center; 
     padding: 40px 24px; 

@@ -24,7 +24,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "fetchSharePoint") {
-        handleSharePointFetch(request.url, request.options)
+        handleSharePointFetch(request.url, request.options, sender.tab?.id)
             .then(data => sendResponse({ success: true, data }))
             .catch(err => sendResponse({ success: false, error: err.message }));
         return true;
@@ -38,7 +38,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-async function handleSharePointFetch(url, options = {}) {
+async function handleSharePointFetch(url, options = {}, preferredTabId = null) {
     const tabs = await chrome.tabs.query({
         url: "https://dxcportal.sharepoint.com/*"
     });
@@ -50,7 +50,13 @@ async function handleSharePointFetch(url, options = {}) {
     // Filter out discarded tabs (Chrome unloads tabs after long idle periods).
     // Discarded tabs still appear in tabs.query() but executeScript() will fail on them.
     const activeTabs = tabs.filter(t => !t.discarded);
-    const candidates = activeTabs.length > 0 ? activeTabs : tabs;
+    const candidates = (activeTabs.length > 0 ? activeTabs : tabs).sort((a, b) => {
+        if (preferredTabId !== null) {
+            if (a.id === preferredTabId) return -1;
+            if (b.id === preferredTabId) return 1;
+        }
+        return Number(Boolean(b.active)) - Number(Boolean(a.active));
+    });
 
     let lastError = null;
 
@@ -59,6 +65,21 @@ async function handleSharePointFetch(url, options = {}) {
             const results = await chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 func: async (fetchUrl, fetchOptions) => {
+                    const REQUEST_TIMEOUT_MS = 8000;
+
+                    async function fetchWithTimeout(targetUrl, init) {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+                        try {
+                            return await fetch(targetUrl, {
+                                ...init,
+                                signal: controller.signal
+                            });
+                        } finally {
+                            clearTimeout(timeoutId);
+                        }
+                    }
+
                     async function getRequestDigest(targetUrl) {
                         const existingDigest = document.getElementById("__REQUESTDIGEST")?.value;
                         if (existingDigest) return existingDigest;
@@ -67,7 +88,7 @@ async function handleSharePointFetch(url, options = {}) {
                         const apiIndex = parsedUrl.pathname.indexOf("/_api/");
                         const webBasePath = apiIndex >= 0 ? parsedUrl.pathname.slice(0, apiIndex) : "";
                         const contextInfoUrl = parsedUrl.origin + webBasePath + "/_api/contextinfo";
-                        const contextResponse = await fetch(contextInfoUrl, {
+                        const contextResponse = await fetchWithTimeout(contextInfoUrl, {
                             method: "POST",
                             credentials: "same-origin",
                             headers: {
@@ -98,7 +119,7 @@ async function handleSharePointFetch(url, options = {}) {
                             headers["X-RequestDigest"] = await getRequestDigest(fetchUrl);
                         }
 
-                        const response = await fetch(fetchUrl, {
+                        const response = await fetchWithTimeout(fetchUrl, {
                             ...fetchOptions,
                             headers,
                             credentials: "same-origin"
@@ -117,6 +138,9 @@ async function handleSharePointFetch(url, options = {}) {
                         }
                         return { data };
                     } catch (e) {
+                        if (e.name === "AbortError") {
+                            return { error: "REQUEST_TIMEOUT" };
+                        }
                         return { error: e.message };
                     }
                 },

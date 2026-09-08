@@ -15,6 +15,7 @@
     const DEFAULT_SITE = "msteams_268a65";
 
     const MIN_QUERY_LENGTH = 3;
+    const CURRENT_FILE_METADATA_TIMEOUT_MS = 9000;
     const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb", "ppt", "pptx", "pptm"]);
 
     // siteConfigs: array of { site: string, folders: string[] }
@@ -307,7 +308,7 @@
     currentFileShareBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         if (!currentPageFile) return;
-        openShareModal(currentPageFile, getViewFileUrl(currentPageFile.path));
+        openShareModal(currentPageFile, getCurrentPageFileShareUrl(currentPageFile));
     });
     currentFileCheckoutBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -385,9 +386,8 @@
 
     // Focus input & restore state
     searchInput.focus();
-    restoreState();
+    restoreState().finally(() => detectCurrentPageFile());
     checkConnection();
-    detectCurrentPageFile();
 
     // ============================================
     // Close Modal
@@ -801,13 +801,18 @@
             return;
         }
 
+        // Render the URL-derived candidate immediately. Metadata enriches the
+        // banner in the background and must not delay showing the file actions.
+        currentPageFile = file;
+        renderCurrentPageFile();
+
         try {
             const fileUrl = getCurrentPageFileDetailsUrl(file);
             if (fileUrl) {
-                const fileDataResponse = await bgFetch(fileUrl, {
+                const fileDataResponse = await bgFetchWithTimeout(fileUrl, {
                     method: "GET",
                     headers: { "Accept": "application/json;odata=verbose" }
-                });
+                }, CURRENT_FILE_METADATA_TIMEOUT_MS);
                 const details = fileDataResponse?.d;
                 if (details) {
                     file.name = details.Name || file.name;
@@ -816,14 +821,22 @@
                     file.modified = details.TimeLastModified || "";
                     file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
                     file.editor = details.ModifiedBy?.Title || "";
+                    file.metadataLoaded = true;
+                } else {
+                    file.metadataError = true;
                 }
+            } else {
+                file.metadataError = true;
             }
         } catch (e) {
+            file.metadataError = true;
             console.warn("Could not load current file details:", e);
         }
 
-        currentPageFile = file;
-        renderCurrentPageFile();
+        file.metadataLoading = false;
+        if (currentPageFile === file) {
+            renderCurrentPageFile();
+        }
     }
 
     // ============================================
@@ -995,6 +1008,17 @@
                     }
                 }
             );
+        });
+    }
+
+    function bgFetchWithTimeout(url, options = {}, timeoutMs = CURRENT_FILE_METADATA_TIMEOUT_MS) {
+        let timeoutId = null;
+        const timeout = new Promise((resolve, reject) => {
+            timeoutId = setTimeout(() => reject(new Error("REQUEST_TIMEOUT")), timeoutMs);
+        });
+
+        return Promise.race([bgFetch(url, options), timeout]).finally(() => {
+            if (timeoutId) clearTimeout(timeoutId);
         });
     }
 
@@ -1230,16 +1254,30 @@
 
         currentFileNameEl.textContent = currentPageFile.name;
         currentFilePathEl.innerHTML = "";
-        currentFilePathEl.appendChild(buildFolderBreadcrumb(currentPageFile));
+        if (currentPageFile.path) {
+            currentFilePathEl.appendChild(buildFolderBreadcrumb(currentPageFile));
+        } else {
+            currentFilePathEl.textContent = currentPageFile.metadataLoading
+                ? "Loading file details..."
+                : "File path unavailable";
+        }
         
         currentFileMetaEl.innerHTML = 
             (currentPageFile.size ? '<span class="sp-file-size">💾 ' + formatFileSize(currentPageFile.size) + '</span>' : '') +
             (currentPageFile.editor ? '<span class="sp-file-editor">👤 ' + escapeHtml(formatEditorName(currentPageFile.editor)) + '</span>' : '') +
-            (currentPageFile.modified ? '<span class="sp-file-modified">🕒 ' + escapeHtml(formatDate(currentPageFile.modified)) + '</span>' : '');
+            (currentPageFile.modified ? '<span class="sp-file-modified">🕒 ' + escapeHtml(formatDate(currentPageFile.modified)) + '</span>' : '') +
+            (currentPageFile.metadataLoading && !currentPageFile.size && !currentPageFile.modified
+                ? '<span class="sp-file-modified">⏳ Loading file details...</span>'
+                : '') +
+            (currentPageFile.metadataError ? '<span class="sp-file-modified">⚠ File details unavailable</span>' : '');
 
         currentFileDesktopBtn.classList.toggle("sp-hidden", !canOpenInDesktopApp(currentPageFile));
+        currentFileShareBtn.disabled = !getCurrentPageFileShareUrl(currentPageFile);
+        currentFileCheckoutBtn.disabled = !currentPageFile.path || !currentPageFile.metadataLoaded;
         currentFileCheckoutBtn.textContent = getCheckoutActionIcon(currentPageFile.isCheckedOut);
-        currentFileCheckoutBtn.title = currentPageFile.isCheckedOut ? "Check in file" : "Check out file";
+        currentFileCheckoutBtn.title = currentPageFile.metadataLoaded && currentPageFile.path
+            ? (currentPageFile.isCheckedOut ? "Check in file" : "Check out file")
+            : currentPageFile.metadataLoading ? "Loading file details..." : "File details unavailable";
         currentFileEl.classList.remove("sp-hidden");
     }
 
@@ -1324,6 +1362,15 @@
     // ============================================
     function getViewFileUrl(serverRelativePath) {
         return getFileWebUrl(serverRelativePath) + "?web=1";
+    }
+
+    function getCurrentPageFileShareUrl(file) {
+        if (file?.path) {
+            return getViewFileUrl(file.path);
+        }
+        // A sourcedoc-only viewer URL is still a useful share target while
+        // SharePoint metadata is loading or unavailable.
+        return window.location.href;
     }
 
     // ============================================
@@ -1413,21 +1460,26 @@
         const rawIdPath = currentUrl.searchParams.get("id");
         const rawFileName = currentUrl.searchParams.get("file");
         const rawSourceDoc = currentUrl.searchParams.get("sourcedoc");
-        const serverRelativePath = decodeURIComponent(rawIdPath || "");
-        const fileName = decodeSharePointFileName(rawFileName) || (serverRelativePath.split("/").pop() || "");
+        const serverRelativePath = decodeSharePointPath(rawIdPath) || getCurrentPageServerRelativePath(currentUrl);
         const sourceDocId = normalizeSourceDocId(rawSourceDoc);
+        const fileName = decodeSharePointFileName(rawFileName) ||
+            (serverRelativePath.split("/").pop() || "") ||
+            getFileNameFromDocumentTitle();
         const siteUrl = getCurrentPageSiteUrl(currentUrl, serverRelativePath);
-        if (!fileName || !isCurrentFileTypeSupported(fileName)) {
+        if ((!fileName && !sourceDocId) || (!sourceDocId && !isCurrentFileTypeSupported(fileName))) {
             return null;
         }
         return {
-            name: fileName,
+            name: fileName || "Current file",
             path: serverRelativePath,
             size: 0,
             modified: "",
             isCheckedOut: false,
             sourceDocId,
-            siteUrl
+            siteUrl,
+            metadataLoading: true,
+            metadataLoaded: false,
+            metadataError: false
         };
     }
 
@@ -1457,6 +1509,10 @@
         const site = file?.site || getSiteConfigByServerRelativePath(serverRelativePath)?.site || getSiteSlugFromServerRelativePath(serverRelativePath);
         const libraryPath = site ? buildLibraryPath(site) : "";
         const parentFolderPath = getFolderPath(serverRelativePath, file?.name || "");
+        if (!libraryPath || !parentFolderPath.startsWith(libraryPath)) {
+            wrapper.textContent = parentFolderPath || "/";
+            return wrapper;
+        }
         const relativePath = libraryPath && parentFolderPath.startsWith(libraryPath)
             ? parentFolderPath.slice(libraryPath.length)
             : "";
@@ -1526,6 +1582,36 @@
         return value.replace(/%u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
     }
 
+    function decodeSharePointPath(rawPath) {
+        if (!rawPath) return "";
+        try {
+            const decoded = decodeURIComponent(rawPath);
+            try {
+                const absoluteUrl = new URL(decoded);
+                if (absoluteUrl.origin === TENANT_ORIGIN) {
+                    return decodeURIComponent(absoluteUrl.pathname);
+                }
+            } catch (e) {
+                // The value is a relative server path, which is expected here.
+            }
+            return decoded;
+        } catch (e) {
+            return rawPath;
+        }
+    }
+
+    function getCurrentPageServerRelativePath(currentUrl) {
+        const path = decodeSharePointPath(currentUrl.pathname);
+        const match = path.match(/\/(sites|teams)\/[^/]+\/.*\.(?:docx?|xlsx?|xlsm|xlsb|pptx?|pptm)$/i);
+        return match ? match[0] : "";
+    }
+
+    function getFileNameFromDocumentTitle() {
+        const title = String(document.title || "");
+        const match = title.match(/[^|\u2013\u2014-]+\.(?:docx?|xlsx?|xlsm|xlsb|pptx?|pptm)\b/i);
+        return match ? match[0].trim() : "";
+    }
+
     function normalizeSourceDocId(rawSourceDoc) {
         if (!rawSourceDoc) return "";
         let value = rawSourceDoc;
@@ -1541,8 +1627,22 @@
         const fromPath = getSiteUrlFromServerRelativePath(serverRelativePath);
         if (fromPath) return fromPath;
         const match = currentUrl.pathname.match(/\/(sites|teams)\/[^/]+/);
-        if (!match) return "";
-        return currentUrl.origin + match[0];
+        if (match) return currentUrl.origin + match[0];
+
+        const pageContextUrl = window._spPageContextInfo?.webAbsoluteUrl;
+        if (pageContextUrl) {
+            try {
+                const contextUrl = new URL(pageContextUrl, currentUrl.origin);
+                if (contextUrl.origin === currentUrl.origin) {
+                    return contextUrl.href.replace(/\/$/, "");
+                }
+            } catch (e) {
+                // Fall through to the configured site when page context is invalid.
+            }
+        }
+
+        const configuredSite = defaultSite || siteConfigs[0]?.site;
+        return configuredSite ? buildSiteUrl(configuredSite) : "";
     }
 
     function canOpenInDesktopApp(file) {
