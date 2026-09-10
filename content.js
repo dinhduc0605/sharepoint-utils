@@ -1194,13 +1194,19 @@
                 }, CURRENT_FILE_METADATA_TIMEOUT_MS);
                 const details = fileDataResponse?.d;
                 if (details) {
-                    file.name = details.Name || file.name;
-                    file.path = details.ServerRelativeUrl || file.path;
-                    file.size = parseInt(details.Length || 0, 10);
-                    file.modified = details.TimeLastModified || "";
-                    file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
-                    file.editor = details.ModifiedBy?.Title || "";
-                    file.metadataLoaded = true;
+                    const metadataName = details.Name || file.name;
+                    const metadataPath = details.ServerRelativeUrl || "";
+                    if (metadataPath && isVerifiedFilePath({ name: metadataName, path: metadataPath, metadataLoaded: true })) {
+                        file.name = metadataName;
+                        file.path = metadataPath;
+                        file.size = parseInt(details.Length || 0, 10);
+                        file.modified = details.TimeLastModified || "";
+                        file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
+                        file.editor = details.ModifiedBy?.Title || "";
+                        file.metadataLoaded = true;
+                    } else {
+                        file.metadataError = true;
+                    }
                 } else {
                     file.metadataError = true;
                 }
@@ -1916,7 +1922,12 @@
             (currentPageFile.metadataError ? '<span class="sp-file-modified">⚠ File details unavailable</span>' : '');
 
         currentFileDesktopBtn.classList.toggle("sp-hidden", !canOpenInDesktopApp(currentPageFile));
-        currentFileShareBtn.disabled = !getCurrentPageFileShareUrl(currentPageFile);
+        const currentFileShareUrl = getCurrentPageFileShareUrl(currentPageFile);
+        currentFileShareBtn.disabled = !currentFileShareUrl;
+        currentFileShareBtn.title = currentPageFile.metadataLoading
+            ? "Loading file details..."
+            : currentFileShareUrl ? "Copy share link" : "Share link unavailable";
+        currentFileShareBtn.setAttribute("aria-label", currentFileShareBtn.title);
         currentFileCheckoutBtn.disabled = !currentPageFile.path || !currentPageFile.metadataLoaded;
         currentFileCheckoutBtn.textContent = getCheckoutActionIcon(currentPageFile.isCheckedOut);
         currentFileCheckoutBtn.title = currentPageFile.metadataLoaded && currentPageFile.path
@@ -2029,12 +2040,10 @@
     }
 
     function getCurrentPageFileShareUrl(file) {
-        if (file?.path) {
+        if (isVerifiedFilePath(file)) {
             return getViewFileUrl(file.path, file.siteUrl);
         }
-        // A sourcedoc-only viewer URL is still a useful share target while
-        // SharePoint metadata is loading or unavailable.
-        return window.location.href;
+        return "";
     }
 
     // ============================================
@@ -2090,11 +2099,15 @@
         const rawIdPath = currentUrl.searchParams.get("id");
         const rawFileName = currentUrl.searchParams.get("file");
         const rawSourceDoc = currentUrl.searchParams.get("sourcedoc");
-        const serverRelativePath = decodeSharePointPath(rawIdPath) || getCurrentPageServerRelativePath(currentUrl);
+        const idPath = decodeSharePointPath(rawIdPath);
+        const basePath = idPath || getCurrentPageServerRelativePath(currentUrl);
         const sourceDocId = normalizeSourceDocId(rawSourceDoc);
-        const fileName = decodeSharePointFileName(rawFileName) ||
-            (serverRelativePath.split("/").pop() || "") ||
-            getFileNameFromDocumentTitle();
+        const explicitFileName = decodeSharePointFileName(rawFileName);
+        const basePathName = getServerRelativePathLeaf(basePath);
+        const titleFileName = getFileNameFromDocumentTitle();
+        const fileName = explicitFileName ||
+            (isCurrentFileTypeSupported(basePathName) ? basePathName : titleFileName || basePathName);
+        const serverRelativePath = appendFileNameToPath(basePath, fileName);
         const siteUrl = getCurrentPageSiteUrl(currentUrl, serverRelativePath);
         if ((!fileName && !sourceDocId) || (!sourceDocId && !isCurrentFileTypeSupported(fileName))) {
             return null;
@@ -2116,6 +2129,26 @@
     function isCurrentFileTypeSupported(fileName) {
         const ext = String(fileName || "").split(".").pop().toLowerCase();
         return CURRENT_FILE_EXTENSIONS.has(ext);
+    }
+
+    function isVerifiedFilePath(file) {
+        if (!file?.metadataLoaded || !file.path || !file.name) return false;
+        const pathName = getServerRelativePathLeaf(file.path);
+        const fileName = decodeSharePointFileName(file.name).trim();
+        return !!pathName && !!fileName && pathName.toLowerCase() === fileName.toLowerCase();
+    }
+
+    function getServerRelativePathLeaf(serverRelativePath) {
+        const path = String(serverRelativePath || "").replace(/\/+$/, "");
+        return decodeSharePointFileName(path.split("/").pop() || "");
+    }
+
+    function appendFileNameToPath(basePath, fileName) {
+        const path = String(basePath || "").replace(/\/+$/, "");
+        const name = String(fileName || "").replace(/^\/+/, "");
+        if (!path || !name) return path;
+        if (getServerRelativePathLeaf(path).toLowerCase() === name.toLowerCase()) return path;
+        return isCurrentFileTypeSupported(name) ? path + "/" + name : path;
     }
 
     function getSiteUrlFromServerRelativePath(serverRelativePath) {
