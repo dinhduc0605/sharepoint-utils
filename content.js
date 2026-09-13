@@ -20,7 +20,7 @@
 
     const MIN_QUERY_LENGTH = 3;
     const CURRENT_FILE_METADATA_TIMEOUT_MS = 9000;
-    const SEARCH_PAGE_SIZE = 100;
+    const SEARCH_PAGE_SIZE = 50;
     const CURRENT_FILE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "xlsm", "xlsb", "ppt", "pptx", "pptm"]);
     const SP_UTILS = globalThis.SharePointUtils;
     if (!SP_UTILS) throw new Error("SharePoint Utils helpers were not loaded");
@@ -1296,7 +1296,7 @@
         const requests = activeConfigs.map(function (siteConfig) {
             const previousPage = priorPages.find(page => page.site === siteConfig.site);
             const startRow = previousPage?.nextStartRow || 0;
-            const queryText = termQuery + ' path:"' + buildLibraryUrl(siteConfig) + '"';
+            const queryText = termQuery + ' IsDocument:true path:"' + buildLibraryUrl(siteConfig) + '"';
             return fetchSearchRows(queryText, buildSiteUrl(siteConfig), startRow)
                 .then(page => ({ siteConfig, page }));
         });
@@ -1383,7 +1383,7 @@
             "'&startrow=" + startRow +
             "&rowlimit=" + rowLimit +
             "&selectproperties='Title,Path,Filename,FileLeafRef,LastModifiedTime,Size,EditorOWSUSER,ContentClass,FileExtension,IsDocument,IsContainer'" +
-            "&sortlist='IsContainer:descending,Rank:descending'";
+            "&sortlist='Rank:descending'";
 
         const searchData = await bgFetch(searchUrl, {
             method: "GET",
