@@ -1078,6 +1078,7 @@
                         file.size = parseInt(details.Length || 0, 10);
                         file.modified = details.TimeLastModified || "";
                         file.isCheckedOut = isFileCheckedOut(details.CheckOutType);
+                        file.checkedOutBy = file.isCheckedOut ? details.CheckedOutByUser?.Title || "" : "";
                         file.editor = details.ModifiedBy?.Title || "";
                         file.metadataLoaded = true;
                     } else {
@@ -1222,6 +1223,7 @@
 
             const name = getVal("Filename") || getVal("FileLeafRef") || getVal("Title") || relativePath.split("/").pop() || "";
 
+            const checkoutUser = getVal("CheckoutUserOWSUSER");
             const fileKey = relativePath.toLowerCase();
             if (uniqueFiles.has(fileKey)) {
                 return;
@@ -1235,7 +1237,8 @@
                 size: parseInt(getVal("Size") || "0", 10),
                 modified: getVal("LastModifiedTime") || "",
                 editor: getVal("EditorOWSUSER") || "",
-                isCheckedOut: false
+                isCheckedOut: Boolean(checkoutUser),
+                checkedOutBy: formatEditorName(checkoutUser)
             });
             });
         });
@@ -1259,7 +1262,7 @@
             "/_api/search/query?querytext='" + encodeURIComponent(queryText) +
             "'&startrow=" + startRow +
             "&rowlimit=" + rowLimit +
-            "&selectproperties='Title,Path,Filename,FileLeafRef,LastModifiedTime,Size,EditorOWSUSER,ContentClass,FileExtension,IsDocument,IsContainer'" +
+            "&selectproperties='Title,Path,Filename,FileLeafRef,LastModifiedTime,Size,EditorOWSUSER,CheckoutUserOWSUSER,ContentClass,FileExtension,IsDocument,IsContainer'" +
             "&sortlist='Rank:descending'";
 
         const searchData = await bgFetch(searchUrl, {
@@ -1502,6 +1505,7 @@
                 (file.size ? '<span class="sp-file-size">💾 ' + formatFileSize(file.size) + '</span>' : '') +
                 (file.editor ? '<span class="sp-file-editor">👤 ' + escapeHtml(formatEditorName(file.editor)) + '</span>' : '') +
                 (file.modified ? '<span class="sp-file-modified">🕒 ' + escapeHtml(formatDate(file.modified)) + '</span>' : '') +
+                getCheckoutBadgeHtml(file) +
                 '</div>' +
                 '</div>' +
                 '<div class="sp-file-actions">' +
@@ -1592,6 +1596,7 @@
             if (nextAction === "checkOut") {
                 await sharePointCheckOut(file);
                 file.isCheckedOut = true;
+                file.checkedOutBy = await fetchCheckedOutBy(file);
                 buttonEl.textContent = getCheckoutActionIcon(true);
                 buttonEl.title = "Check in file";
                 buttonEl.setAttribute("aria-label", "Check in file");
@@ -1604,13 +1609,16 @@
                 }
                 await sharePointCheckIn(file, comment);
                 file.isCheckedOut = false;
+                file.checkedOutBy = "";
                 buttonEl.textContent = getCheckoutActionIcon(false);
                 buttonEl.title = "Check out file";
                 buttonEl.setAttribute("aria-label", "Check out file");
                 showStatus("success", '🟢 Checked in "' + escapeHtml(file.name) + '"');
             }
+            updateResultCheckoutBadge(buttonEl, file);
             if (currentPageFile && currentPageFile.path === file.path) {
                 currentPageFile.isCheckedOut = file.isCheckedOut;
+                currentPageFile.checkedOutBy = file.checkedOutBy;
                 renderCurrentPageFile();
             }
         } catch (error) {
@@ -1620,6 +1628,37 @@
             showStatus("error", "❌ " + escapeHtml(error.message));
         } finally {
             buttonEl.disabled = false;
+        }
+    }
+
+    function getCheckoutBadgeHtml(file) {
+        if (!file?.isCheckedOut) return "";
+        const label = file.checkedOutBy ? "Checked out by " + file.checkedOutBy : "Checked out";
+        return '<span class="sp-file-checkout" title="' + escapeHtml(label) + '">🔒 ' + escapeHtml(label) + '</span>';
+    }
+
+    function updateResultCheckoutBadge(buttonEl, file) {
+        const meta = buttonEl.closest(".sp-file-item")?.querySelector(".sp-file-meta");
+        if (!meta) return;
+        meta.querySelector(".sp-file-checkout")?.remove();
+        meta.insertAdjacentHTML("beforeend", getCheckoutBadgeHtml(file));
+    }
+
+    async function fetchCheckedOutBy(file) {
+        const siteUrl = file?.siteUrl || getSiteUrlFromServerRelativePath(file?.path);
+        const url = siteUrl +
+            "/_api/web/getfilebyserverrelativeurl('" +
+            encodeSharePointPath(file?.path || "") +
+            "')/CheckedOutByUser?$select=Title";
+        try {
+            const data = await bgFetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json;odata=verbose" }
+            });
+            return data?.d?.Title || "";
+        } catch (error) {
+            console.warn("Could not load checkout user:", error);
+            return "";
         }
     }
 
@@ -1730,6 +1769,7 @@
             (currentPageFile.size ? '<span class="sp-file-size">💾 ' + formatFileSize(currentPageFile.size) + '</span>' : '') +
             (currentPageFile.editor ? '<span class="sp-file-editor">👤 ' + escapeHtml(formatEditorName(currentPageFile.editor)) + '</span>' : '') +
             (currentPageFile.modified ? '<span class="sp-file-modified">🕒 ' + escapeHtml(formatDate(currentPageFile.modified)) + '</span>' : '') +
+            getCheckoutBadgeHtml(currentPageFile) +
             (currentPageFile.metadataLoading && !currentPageFile.size && !currentPageFile.modified
                 ? '<span class="sp-file-modified">⏳ Loading file details...</span>'
                 : '') +
@@ -1932,6 +1972,7 @@
             size: 0,
             modified: "",
             isCheckedOut: false,
+            checkedOutBy: "",
             sourceDocId,
             siteUrl,
             metadataLoading: true,
@@ -2051,7 +2092,7 @@
     }
 
     function getCurrentPageFileDetailsUrl(file) {
-        const select = "?$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType,ModifiedBy/Title&$expand=ModifiedBy";
+        const select = "?$select=Name,ServerRelativeUrl,Length,TimeLastModified,CheckOutType,ModifiedBy/Title,CheckedOutByUser/Title&$expand=ModifiedBy,CheckedOutByUser";
         if (file.sourceDocId && file.siteUrl) {
             return file.siteUrl + "/_api/web/GetFileById(guid'" + encodeODataString(file.sourceDocId) + "')" + select;
         }

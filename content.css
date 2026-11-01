@@ -441,6 +441,13 @@
     align-items: center;
     white-space: nowrap;
 }
+.sp-file-checkout {
+    font-size: 11px;
+    color: #fbbf24;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+}
 .sp-file-actions {
     display: grid; 
     grid-template-columns: auto auto;
