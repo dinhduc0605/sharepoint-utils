@@ -441,7 +441,7 @@
     align-items: center;
     white-space: nowrap;
 }
-.sp-file-actions { 
+.sp-file-actions {
     display: grid; 
     grid-template-columns: auto auto;
     grid-template-rows: auto auto;
@@ -784,18 +784,6 @@
     border-radius: 10px;
     background: rgba(24, 24, 27, 0.35);
 }
-.sp-sync-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--sp-text-primary);
-    font-size: 12px;
-    cursor: pointer;
-}
-.sp-sync-toggle input {
-    accent-color: var(--sp-accent);
-    cursor: pointer;
-}
 .sp-backup-actions {
     display: flex;
     gap: 8px;
@@ -948,13 +936,6 @@
 .sp-inline-modal-btn-primary:hover { 
     background: var(--sp-accent-muted); 
 }
-.sp-sync-modal-actions {
-    flex-direction: column;
-}
-.sp-sync-modal-actions .sp-inline-modal-btn {
-    width: 100%;
-}
-
 /* Custom Styled Scrollbar */
 .sp-results::-webkit-scrollbar, .sp-settings-content::-webkit-scrollbar { 
     width: 5px; 

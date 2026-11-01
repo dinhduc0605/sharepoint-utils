@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is a Manifest V3 Chrome extension with a flat layout. [`manifest.json`](manifest.json) declares permissions and the background service worker. [`background.js`](background.js) injects the modal on icon click, checks that SharePoint tabs are open, and proxies SharePoint REST calls by running `fetch` inside an open SharePoint tab (adding `X-RequestDigest` for non-GET requests). [`content-utils.js`](content-utils.js) holds pure, testable helpers exposed as `globalThis.SharePointUtils` and is injected before [`content.js`](content.js), which builds the modal UI, search, settings, sync, favorites, and check-in/check-out flows. [`content.css`](content.css) contains all injected styles. [`tests/`](tests) contains `node:test` suites for the helpers. [`README.md`](README.md) documents installation and user-facing behavior.
+This repository is a Manifest V3 Chrome extension with a flat layout. [`manifest.json`](manifest.json) declares permissions and the background service worker. [`background.js`](background.js) injects the modal on icon click, checks that SharePoint tabs are open, and proxies SharePoint REST calls by running `fetch` inside an open SharePoint tab (adding `X-RequestDigest` for non-GET requests). [`content-utils.js`](content-utils.js) holds pure, testable helpers exposed as `globalThis.SharePointUtils` and is injected before [`content.js`](content.js), which builds the modal UI, search, settings, backup, and check-in/check-out flows. [`content.css`](content.css) contains all injected styles. [`tests/`](tests) contains `node:test` suites for the helpers. [`README.md`](README.md) documents installation and user-facing behavior.
 
 ## Build, Test, and Development Commands
 There is no bundler or package-based build step in this repo. Work directly on the checked-in files and reload the unpacked extension in Chrome.
@@ -11,7 +11,7 @@ There is no bundler or package-based build step in this repo. Work directly on t
 - `node --test tests/content-utils.test.mjs`: helper unit tests.
 - `git diff`: review the exact script and manifest changes before testing.
 
-Manual verification is still required for UI and SharePoint flows: open a SharePoint tab, click the extension icon, exercise search, settings, import/export, sync, and check-in/check-out.
+Manual verification is still required for UI and SharePoint flows: open a SharePoint tab, click the extension icon, exercise search, settings, import/export, and check-in/check-out.
 
 ## Coding Style & Naming Conventions
 Use 4-space indentation in JavaScript, JSON, and CSS to match the existing files. Prefer `camelCase` for variables and functions, `UPPER_SNAKE_CASE` for shared constants, and keep CSS class names prefixed with `sp-`. Preserve the current plain JavaScript style; do not introduce frameworks, build tooling, or module splitting unless the repo is explicitly being restructured. Put new pure logic in `content-utils.js` and cover it with a test.
@@ -23,7 +23,7 @@ Run the syntax checks and helper tests above for every change. For behavior chan
 
 - modal injection from the toolbar button
 - SharePoint connection checks (per configured tenant origin) and fetch flows
-- local and Chrome sync storage reads/writes, import/export
+- local storage reads/writes, import/export
 - UI regressions in both Search and Settings tabs
 
 When fixing edge cases, document the repro steps in the pull request.

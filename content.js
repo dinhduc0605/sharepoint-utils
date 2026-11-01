@@ -47,11 +47,9 @@
     let lastSearchResults = []; // store last search results for re-filtering
     let lastQuery = "";
     let searchState = null;
-    let favoriteFiles = [];
     let recentFiles = [];
     let recentSearches = [];
     let savedSearches = [];
-    let syncEnabled = false;
     let currentPageFile = null;
 
     // ============================================
@@ -135,17 +133,12 @@
                 </div>
                 <div class="sp-settings-content">
                     <div class="sp-settings-section sp-settings-backup-section">
-                        <div class="sp-settings-label">Backup & Sync</div>
-                        <label class="sp-sync-toggle">
-                            <input type="checkbox" id="sp-sync-config-toggle">
-                            <span>Sync sites and folders across Chrome</span>
-                        </label>
+                        <div class="sp-settings-label">Backup</div>
                         <div class="sp-backup-actions">
                             <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-export-config-btn">Export JSON</button>
                             <button type="button" class="sp-add-path-btn sp-btn-secondary" id="sp-import-config-btn">Import JSON</button>
                             <input type="file" id="sp-import-config-input" accept="application/json,.json" class="sp-file-input-hidden">
                         </div>
-                        <div class="sp-refresh-hint">If synced data already exists, enabling asks whether to keep Local or Chrome profile. Later opens use the synced configuration; local changes are copied back automatically.</div>
                         <div class="sp-refresh-hint">Export creates a portable backup of sites, libraries, folders, and the default site.</div>
                     </div>
                     <div class="sp-settings-section">
@@ -218,20 +211,6 @@
                 </div>
             </div>
         </div>
-        <div class="sp-inline-modal-backdrop sp-hidden" id="sp-sync-modal-backdrop" aria-hidden="true">
-            <div class="sp-inline-modal" id="sp-sync-modal" role="dialog" aria-modal="true" aria-labelledby="sp-sync-modal-title" aria-describedby="sp-sync-modal-subtitle sp-sync-modal-warning">
-                <div class="sp-inline-modal-title" id="sp-sync-modal-title">Choose sync source</div>
-                <div class="sp-inline-modal-subtitle" id="sp-sync-modal-subtitle"></div>
-                <div class="sp-inline-modal-warning" id="sp-sync-modal-warning">
-                    Synced configuration already exists. Choose which side to keep; the other side will be overwritten.
-                </div>
-                <div class="sp-inline-modal-actions sp-sync-modal-actions">
-                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-sync-use-local-btn">Keep Local → Upload to profile</button>
-                    <button class="sp-inline-modal-btn sp-inline-modal-btn-primary" id="sp-sync-use-profile-btn">Use Chrome profile → Replace local</button>
-                    <button class="sp-inline-modal-btn sp-inline-modal-btn-secondary" id="sp-sync-cancel-btn">Cancel</button>
-                </div>
-            </div>
-        </div>
     `;
 
     document.body.appendChild(backdrop);
@@ -246,7 +225,6 @@
     const addSiteBtn = document.getElementById("sp-add-site-btn");
     const currentSiteBtn = document.getElementById("sp-current-site-btn");
     const siteListEl = document.getElementById("sp-site-list");
-    const syncConfigToggle = document.getElementById("sp-sync-config-toggle");
     const exportConfigBtn = document.getElementById("sp-export-config-btn");
     const importConfigBtn = document.getElementById("sp-import-config-btn");
     const importConfigInput = document.getElementById("sp-import-config-input");
@@ -280,19 +258,12 @@
     const shareLinkBtn = document.getElementById("sp-share-link-btn");
     const shareBacklogBtn = document.getElementById("sp-share-backlog-btn");
     const shareCancelBtn = document.getElementById("sp-share-cancel-btn");
-    const syncModalBackdrop = document.getElementById("sp-sync-modal-backdrop");
-    const syncModal = document.getElementById("sp-sync-modal");
-    const syncModalSubtitleEl = document.getElementById("sp-sync-modal-subtitle");
-    const syncUseLocalBtn = document.getElementById("sp-sync-use-local-btn");
-    const syncUseProfileBtn = document.getElementById("sp-sync-use-profile-btn");
-    const syncCancelBtn = document.getElementById("sp-sync-cancel-btn");
     let activeShareFile = null;
     let activeShareUrl = null;
 
     const CHECKOUT_ICON = "📝";
     const CHECKIN_ICON = "✅";
     let activeInlineModal = null;
-    let activeSyncConflict = null;
 
     const siteFilterSelect = document.getElementById("sp-site-filter-select");
     const folderFilterSelect = document.getElementById("sp-folder-filter-select");
@@ -328,7 +299,6 @@
     });
     settingsCloseBtn.addEventListener("click", closeSettingsOverlay);
     saveSearchBtn.addEventListener("click", saveCurrentSearch);
-    syncConfigToggle.addEventListener("change", toggleConfigSync);
     exportConfigBtn.addEventListener("click", exportConfig);
     importConfigBtn.addEventListener("click", () => importConfigInput.click());
     importConfigInput.addEventListener("change", importConfigFromFile);
@@ -343,10 +313,6 @@
     backdrop.addEventListener("keydown", (e) => {
         if (e.key === "Tab" && document.getElementById("sp-search-backdrop")) {
             trapModalFocus(e);
-            return;
-        }
-        if (e.key === "Escape" && activeSyncConflict) {
-            closeSyncConflict(null);
             return;
         }
         if (e.key === "Escape" && activeInlineModal) {
@@ -401,12 +367,6 @@
         }
         closeShareModal();
     });
-
-    syncModal.addEventListener("click", (e) => e.stopPropagation());
-    syncModalBackdrop.addEventListener("click", () => closeSyncConflict(null));
-    syncUseLocalBtn.addEventListener("click", () => closeSyncConflict("local"));
-    syncUseProfileBtn.addEventListener("click", () => closeSyncConflict("profile"));
-    syncCancelBtn.addEventListener("click", () => closeSyncConflict(null));
 
     currentFileShareBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -515,8 +475,7 @@
 
     function trapModalFocus(event) {
         let focusRoot = modal;
-        if (activeSyncConflict) focusRoot = syncModal;
-        else if (activeInlineModal) focusRoot = inlineModal;
+        if (activeInlineModal) focusRoot = inlineModal;
         else if (activeShareFile) focusRoot = shareModal;
         else if (!settingsOverlay.classList.contains("sp-hidden")) focusRoot = settingsOverlay;
 
@@ -952,91 +911,16 @@
     // ============================================
     // Persistent Storage
     // ============================================
-    const CONFIG_SYNC_KEYS = ["siteConfigs", "defaultSite", "syncEnabled"];
-
     function getConfigPayload() {
         return { siteConfigs, defaultSite };
     }
 
     function saveSiteConfigs() {
-        chrome.storage.local.set({ ...getConfigPayload(), syncEnabled });
-        if (syncEnabled) {
-            chrome.storage.sync.set({ ...getConfigPayload(), syncEnabled: true }).catch(function (error) {
-                console.warn("Could not sync SharePoint configuration:", error);
-                showSettingsStatus("error", "❌ Could not sync configuration");
-            });
-        }
+        chrome.storage.local.set(getConfigPayload());
     }
 
     function saveUserPreferences() {
-        chrome.storage.local.set({ favoriteFiles, recentFiles, recentSearches, savedSearches });
-    }
-
-    function getStoredConfig(data) {
-        const configs = Array.isArray(data?.siteConfigs)
-            ? data.siteConfigs.map(normalizeSiteConfig).filter(Boolean)
-            : [];
-        if (configs.length === 0) return null;
-
-        const requestedDefault = normalizeSiteInput(data.defaultSite) || "";
-        return {
-            siteConfigs: configs,
-            defaultSite: configs.some(item => item.site === requestedDefault)
-                ? requestedDefault
-                : configs[0].site
-        };
-    }
-
-    async function toggleConfigSync() {
-        const shouldEnable = syncConfigToggle.checked;
-        const previousSyncEnabled = syncEnabled;
-        syncConfigToggle.disabled = true;
-        try {
-            if (!shouldEnable) {
-                syncEnabled = false;
-                await chrome.storage.sync.set({ syncEnabled: false });
-                await chrome.storage.local.set({ syncEnabled: false });
-                showSettingsStatus("success", "🟢 Configuration sync disabled");
-                return;
-            }
-
-            const syncedData = await chrome.storage.sync.get(CONFIG_SYNC_KEYS);
-            const syncedConfig = getStoredConfig(syncedData);
-            let selectedConfig = { ...getConfigPayload(), siteConfigs: siteConfigs.slice() };
-            let selectedSource = "local";
-
-            if (syncedConfig) {
-                const choice = await promptSyncConflict(selectedConfig, syncedConfig);
-                if (!choice) {
-                    syncConfigToggle.checked = false;
-                    showSettingsStatus("", "");
-                    return;
-                }
-
-                if (choice === "profile") {
-                    selectedSource = "profile";
-                    selectedConfig = syncedConfig;
-                    siteConfigs = selectedConfig.siteConfigs;
-                    defaultSite = selectedConfig.defaultSite;
-                    renderSiteList();
-                    renderPathList();
-                    updateSearchFilterOptions();
-                    updateSelectedLibraryHint();
-                }
-            }
-
-            syncEnabled = true;
-            await chrome.storage.local.set({ ...selectedConfig, syncEnabled: true });
-            await chrome.storage.sync.set({ ...selectedConfig, syncEnabled: true });
-            showSettingsStatus("success", "🟢 Configuration sync enabled using " + selectedSource + " configuration");
-        } catch (error) {
-            syncEnabled = previousSyncEnabled;
-            syncConfigToggle.checked = syncEnabled;
-            chrome.storage.local.set({ syncEnabled });
-            showSettingsStatus("error", "❌ Could not update configuration sync");
-        } finally {
-            syncConfigToggle.disabled = false;
-        }
+        chrome.storage.local.set({ recentFiles, recentSearches, savedSearches });
     }
 
     function exportConfig() {
@@ -1094,24 +978,9 @@
         try {
             const data = await chrome.storage.local.get([
                 "siteConfigs", "searchPaths", "configUrl", "defaultSite",
-                "favoriteFiles", "recentFiles", "recentSearches", "savedSearches", "syncEnabled"
+                "recentFiles", "recentSearches", "savedSearches"
             ]);
 
-            syncEnabled = data.syncEnabled === true;
-            try {
-                const syncedData = await chrome.storage.sync.get(CONFIG_SYNC_KEYS);
-                syncEnabled = syncEnabled || syncedData.syncEnabled === true;
-                if (syncEnabled && Array.isArray(syncedData.siteConfigs) && syncedData.siteConfigs.length > 0) {
-                    data.siteConfigs = syncedData.siteConfigs;
-                    data.defaultSite = syncedData.defaultSite;
-                }
-            } catch (error) {
-                console.warn("Could not restore synced SharePoint configuration:", error);
-            }
-
-            favoriteFiles = Array.isArray(data.favoriteFiles)
-                ? data.favoriteFiles.filter(file => file?.path && file?.name).slice(0, 50)
-                : [];
             recentFiles = Array.isArray(data.recentFiles)
                 ? data.recentFiles.filter(file => file?.path && file?.name).slice(0, 20)
                 : [];
@@ -1143,7 +1012,6 @@
             defaultSite = normalizeSiteInput(data.defaultSite) || "";
             ensureDefaultSite();
             saveSiteConfigs();
-            syncConfigToggle.checked = syncEnabled;
             renderSiteList();
             renderPathList();
             updateSearchFilterOptions();
@@ -1152,6 +1020,7 @@
             chrome.storage.local.remove("fileData");
             chrome.storage.local.remove("searchPaths");
             chrome.storage.local.remove("configUrl");
+            chrome.storage.local.remove(["favoriteFiles", "syncEnabled"]);
         } catch (e) {
             console.warn("Could not restore state:", e);
         }
@@ -1476,7 +1345,7 @@
         if (el) el.remove();
     }
 
-    function getFavoriteKey(file) {
+    function getFileKey(file) {
         return String(file?.siteUrl || "").toLowerCase() + "|" + String(file?.path || "").toLowerCase();
     }
 
@@ -1492,39 +1361,10 @@
         };
     }
 
-    function isFavoriteFile(file) {
-        const key = getFavoriteKey(file);
-        return favoriteFiles.some(item => getFavoriteKey(item) === key);
-    }
-
-    function updateFavoriteButton(button, file) {
-        if (!button) return;
-        const favorite = isFavoriteFile(file);
-        button.textContent = favorite ? "⭐" : "☆";
-        button.title = favorite ? "Remove from favorites" : "Add to favorites";
-        button.setAttribute("aria-label", button.title);
-    }
-
-    function toggleFavorite(file, button) {
-        const key = getFavoriteKey(file);
-        const existingIndex = favoriteFiles.findIndex(item => getFavoriteKey(item) === key);
-        if (existingIndex >= 0) {
-            favoriteFiles.splice(existingIndex, 1);
-            showStatus("success", '🟢 Removed "' + escapeHtml(file.name) + '" from favorites');
-        } else {
-            favoriteFiles.unshift(toStoredFile(file, getViewFileUrl(file.path, file.siteUrl)));
-            favoriteFiles = favoriteFiles.slice(0, 50);
-            showStatus("success", '🟢 Added "' + escapeHtml(file.name) + '" to favorites');
-        }
-        saveUserPreferences();
-        updateFavoriteButton(button, file);
-        renderEmptyStateExtras();
-    }
-
     function rememberRecentFile(file, url) {
         const storedFile = toStoredFile(file, url);
-        const key = getFavoriteKey(storedFile);
-        recentFiles = [storedFile].concat(recentFiles.filter(item => getFavoriteKey(item) !== key)).slice(0, 20);
+        const key = getFileKey(storedFile);
+        recentFiles = [storedFile].concat(recentFiles.filter(item => getFileKey(item) !== key)).slice(0, 20);
         saveUserPreferences();
     }
 
@@ -1609,10 +1449,6 @@
             const url = file.url || getViewFileUrl(file.path);
             if (url) window.open(url, "_blank");
         });
-        addSection("Favorites", favoriteFiles, "sp-empty-item-btn", function (file) {
-            const url = file.url || getViewFileUrl(file.path);
-            if (url) window.open(url, "_blank");
-        });
     }
 
     function displayResults(files, query) {
@@ -1672,20 +1508,12 @@
                 (canOpenInDesktopApp(file) ? '<button type="button" class="sp-action-btn sp-action-desktop" title="Open in desktop app" aria-label="Open in desktop app">🖥️</button>' : '') +
                 '<button type="button" class="sp-action-btn sp-action-checkout" title="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '" aria-label="' + (file.isCheckedOut ? 'Check in file' : 'Check out file') + '">' + getCheckoutActionIcon(file.isCheckedOut) + '</button>' +
                 '<button type="button" class="sp-action-btn sp-action-share" title="Copy share link" aria-label="Copy share link">🔗</button>' +
-                '<button type="button" class="sp-action-btn sp-action-favorite" title="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '" aria-label="' + (isFavoriteFile(file) ? 'Remove from favorites' : 'Add to favorites') + '">' + (isFavoriteFile(file) ? "⭐" : "☆") + '</button>' +
                 '</div>';
 
             item.querySelector(".sp-action-share").addEventListener("click", async (e) => {
                 e.stopPropagation();
                 openShareModal(file, viewFileUrl);
             });
-
-            const favoriteBtn = item.querySelector(".sp-action-favorite");
-            favoriteBtn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                toggleFavorite(file, favoriteBtn);
-            });
-            updateFavoriteButton(favoriteBtn, file);
 
             const desktopBtn = item.querySelector(".sp-action-desktop");
             if (desktopBtn) {
@@ -1862,28 +1690,6 @@
         if (resolver) {
             resolver(submitted ? value : null);
         }
-    }
-
-    function promptSyncConflict(localConfig, syncedConfig) {
-        syncModalSubtitleEl.textContent = "Local: " + localConfig.siteConfigs.length + " site(s) · Chrome profile: " + syncedConfig.siteConfigs.length + " site(s)";
-        syncModalBackdrop.classList.remove("sp-hidden");
-        syncModalBackdrop.setAttribute("aria-hidden", "false");
-        activeSyncConflict = {};
-
-        setTimeout(() => syncUseLocalBtn.focus(), 0);
-
-        return new Promise((resolve) => {
-            activeSyncConflict.resolve = resolve;
-        });
-    }
-
-    function closeSyncConflict(choice) {
-        if (!activeSyncConflict) return;
-        const resolver = activeSyncConflict.resolve;
-        activeSyncConflict = null;
-        syncModalBackdrop.classList.add("sp-hidden");
-        syncModalBackdrop.setAttribute("aria-hidden", "true");
-        if (resolver) resolver(choice);
     }
 
     function openShareModal(file, url) {
