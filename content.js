@@ -36,7 +36,8 @@
         getFileTypeCategory,
         getOfficeDesktopProtocol,
         isFileCheckedOut,
-        normalizeSearchInput
+        normalizeSearchInput,
+        toKqlSearchTerm
     } = SP_UTILS;
 
     // siteConfigs: array of { site: string, folders: string[] }
@@ -496,8 +497,10 @@
 
     // Focus input & restore state
     searchInput.focus();
-    restoreState().finally(() => detectCurrentPageFile());
-    checkConnection();
+    restoreState().finally(() => {
+        checkConnection();
+        detectCurrentPageFile();
+    });
 
     // ============================================
     // Close Modal
@@ -776,7 +779,7 @@
         try {
             path = normalizeSubfolderInput(pathInput.value, defaultSite);
         } catch (e) {
-            showSettingsStatus("error", "❌ " + e.message);
+            showSettingsStatus("error", "❌ " + escapeHtml(e.message));
             setTimeout(() => showSettingsStatus("", ""), 3000);
             return;
         }
@@ -1156,13 +1159,17 @@
 
     async function checkConnection() {
         try {
-            chrome.runtime.sendMessage({ action: "checkConnection" }, (response) => {
+            const origins = siteConfigs.map(siteConfig => siteConfig.origin || TENANT_ORIGIN);
+            chrome.runtime.sendMessage({ action: "checkConnection", origins }, (response) => {
                 if (chrome.runtime.lastError) {
                     showStatus("error", "⚠ Could not check connection");
                     return;
                 }
                 if (response && response.connected) {
                     showStatus("", "");
+                } else if (origins.length > 0 && response?.missingOrigins?.length) {
+                    showStatus("error", "⚠ No SharePoint tab found for " +
+                        escapeHtml(response.missingOrigins.join(", ")) + ". Please open it and login first.");
                 } else {
                     showStatus("error", "⚠ No SharePoint tab found. Please login first.");
                 }
@@ -1264,7 +1271,7 @@
             } else if (error.message.includes("403") || error.message.includes("401") || error.message.includes("429")) {
                 showStatus("error", "🔒 Not authenticated or throttled! Please open SharePoint in a tab and login first.");
             } else {
-                showStatus("error", "❌ Error: " + error.message);
+                showStatus("error", "❌ Error: " + escapeHtml(error.message));
             }
         } finally {
             isLoading = false;
@@ -1276,6 +1283,7 @@
         const normalized = normalizeSearchInput(rawQuery);
         const searchTerms = normalized
             .split(/\s+/)
+            .map(toKqlSearchTerm)
             .filter(Boolean);
 
         if (searchTerms.length === 0) {
@@ -1738,7 +1746,7 @@
             displayResults(getVisibleResults(), searchState.query);
         } catch (error) {
             console.error("Load more error:", error);
-            showStatus("error", "❌ Could not load more results: " + error.message);
+            showStatus("error", "❌ Could not load more results: " + escapeHtml(error.message));
         } finally {
             isLoading = false;
         }
@@ -1781,7 +1789,7 @@
             buttonEl.textContent = originalLabel;
             buttonEl.title = file.isCheckedOut ? "Check in file" : "Check out file";
             buttonEl.setAttribute("aria-label", buttonEl.title);
-            showStatus("error", "❌ " + error.message);
+            showStatus("error", "❌ " + escapeHtml(error.message));
         } finally {
             buttonEl.disabled = false;
         }

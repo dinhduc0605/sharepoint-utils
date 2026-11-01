@@ -31,12 +31,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === "checkConnection") {
-        chrome.tabs.query({ url: "https://*.sharepoint.com/*" })
-            .then(tabs => sendResponse({ connected: tabs && tabs.length > 0 }))
-            .catch(() => sendResponse({ connected: false }));
+        findMissingSharePointOrigins(request.origins)
+            .then(missingOrigins => sendResponse({ connected: missingOrigins.length === 0, missingOrigins }))
+            .catch(() => sendResponse({ connected: false, missingOrigins: [] }));
         return true;
     }
 });
+
+// Returns the configured SharePoint origins that have no open tab.
+// Without configured origins, any SharePoint tab counts as connected.
+async function findMissingSharePointOrigins(rawOrigins) {
+    const origins = (Array.isArray(rawOrigins) ? rawOrigins : [])
+        .map(origin => {
+            try {
+                const url = new URL(origin);
+                return url.protocol === "https:" && url.hostname.endsWith(".sharepoint.com") ? url.origin : "";
+            } catch (e) {
+                return "";
+            }
+        })
+        .filter(Boolean);
+
+    if (origins.length === 0) {
+        const tabs = await chrome.tabs.query({ url: "https://*.sharepoint.com/*" });
+        return tabs && tabs.length > 0 ? [] : ["https://*.sharepoint.com"];
+    }
+
+    const missingOrigins = [];
+    for (const origin of new Set(origins)) {
+        const tabs = await chrome.tabs.query({ url: origin + "/*" });
+        if (!tabs || tabs.length === 0) missingOrigins.push(origin);
+    }
+    return missingOrigins;
+}
 
 async function handleSharePointFetch(url, options = {}, preferredTabId = null) {
     let targetOrigin;

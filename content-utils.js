@@ -21,6 +21,14 @@
         return String(term || "").replace(/["'*]/g, "").trim();
     }
 
+    const KQL_OPERATORS = new Set(["AND", "OR", "NOT", "NEAR", "ONEAR", "WORDS", "XRANK"]);
+
+    function toKqlSearchTerm(term) {
+        const value = String(term || "").replace(/[:"'*()=<>\\+~^!]/g, "").trim();
+        // KQL operators are case-sensitive, so lower-casing makes them plain words.
+        return KQL_OPERATORS.has(value) ? value.toLowerCase() : value;
+    }
+
     function matchesAllSearchTerms(text, searchTerms) {
         const value = String(text || "").normalize("NFKC").toLowerCase();
         return searchTerms.every(function (term) {
@@ -134,6 +142,7 @@
         isFileCheckedOut,
         matchesAllSearchTerms,
         normalizeSearchInput,
-        sanitizeSearchTerm
+        sanitizeSearchTerm,
+        toKqlSearchTerm
     });
 })(globalThis);

@@ -42,3 +42,12 @@ test("escapes HTML and regular expression text", () => {
     assert.equal(regex.test("Q1.2024"), true);
     assert.equal(regex.test("Q1x2024"), false);
 });
+
+test("neutralizes KQL syntax in search terms", () => {
+    assert.equal(utils.toKqlSearchTerm("Title:secret"), "Titlesecret");
+    assert.equal(utils.toKqlSearchTerm("report*"), "report");
+    assert.equal(utils.toKqlSearchTerm("OR"), "or");
+    assert.equal(utils.toKqlSearchTerm("NOT"), "not");
+    assert.equal(utils.toKqlSearchTerm("Oracle"), "Oracle");
+    assert.equal(utils.toKqlSearchTerm("\"()\\"), "");
+});
